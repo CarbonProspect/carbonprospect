@@ -1981,7 +1981,4 @@ const runDatabaseMigrations = async () => {
   }
 };
 
-// Run migrations on module load
-runDatabaseMigrations();
-
 module.exports = router;

@@ -1,6 +1,6 @@
 // src/App.js
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthSystem';
 
 // Import NavBar from the correct nested path
@@ -78,6 +78,7 @@ const ProtectedRoute = ({ children }) => {
 
   return children;
 };
+
 const App = () => {
   return (
     <Router>
@@ -302,13 +303,13 @@ const App = () => {
                   </p>
                 </div>
                 <div className="flex space-x-6">
-                  <a href="/" className="text-gray-300 hover:text-white">Home</a>
-                  <a href="/marketplace" className="text-gray-300 hover:text-white">Marketplace</a>
-                  <a href="/carbon-project/new" className="text-gray-300 hover:text-white">Assessment Tool</a>
-                  <a href="/projects" className="text-gray-300 hover:text-white">Projects</a>
-                  <a href="/ghg-converter" className="text-gray-300 hover:text-white">GHG Converter</a>
-                  <a href="/about" className="text-gray-300 hover:text-white">About</a>
-                  <a href="/login" className="text-gray-300 hover:text-white">Login</a>
+                  <Link to="/" className="text-gray-300 hover:text-white">Home</Link>
+                  <Link to="/marketplace" className="text-gray-300 hover:text-white">Marketplace</Link>
+                  <Link to="/carbon-project/new" className="text-gray-300 hover:text-white">Assessment Tool</Link>
+                  <Link to="/projects" className="text-gray-300 hover:text-white">Projects</Link>
+                  <Link to="/ghg-converter" className="text-gray-300 hover:text-white">GHG Converter</Link>
+                  <Link to="/about" className="text-gray-300 hover:text-white">About</Link>
+                  <Link to="/login" className="text-gray-300 hover:text-white">Login</Link>
                 </div>
               </div>
               <div className="mt-8 pt-8 border-t border-gray-700 text-center text-sm text-gray-400">

@@ -1,10 +1,15 @@
-// MarketplacePage.js - Simple version that works
+// MarketplacePage.js - Fixed version that works in both development and production
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthSystem';
 
-// For now, bypass axios and use direct fetch to avoid proxy issues
-const API_BASE = 'http://localhost:3001/api';
+// Dynamically set API base URL based on environment
+const API_BASE = process.env.NODE_ENV === 'production' 
+  ? '/api'  // In production, use relative path (same domain)
+  : 'http://localhost:3001/api';  // In development, use localhost
+
+// Alternative: Use environment variable if you have one set up
+// const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 const MarketplacePage = () => {
   const [products, setProducts] = useState([]);
@@ -65,7 +70,7 @@ const MarketplacePage = () => {
       }
     } catch (err) {
       console.error('Error loading products:', err);
-      setError('Failed to load products. Please ensure the backend is running.');
+      setError('Failed to load products. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -127,7 +132,7 @@ const MarketplacePage = () => {
       }
     } catch (err) {
       console.error('Error loading providers:', err);
-      setError('Failed to load providers. Please ensure the backend is running.');
+      setError('Failed to load providers. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -349,7 +354,7 @@ const MarketplacePage = () => {
               <p className="font-semibold">Error</p>
               <p>{error}</p>
               <button 
-                onClick={loadProducts} 
+                onClick={selectedTab === 'products' ? loadProducts : loadProviders} 
                 className="mt-2 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
               >
                 Try Again

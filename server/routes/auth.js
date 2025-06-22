@@ -2,9 +2,13 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 // Import pool directly without destructuring
 const pool = require('../db/pool');
+
+// Import email service
+const emailService = require('../services/emailService');
 
 // Add debug logging to verify pool is properly imported
 console.log('Auth routes loaded, pool type:', typeof pool);
@@ -78,7 +82,7 @@ const getUserProfileInfo = async (userId, role) => {
 
 /**
  * @route POST /api/auth/register
- * @desc Register a new user
+ * @desc Register a new user with email verification
  * @access Public
  */
 router.post('/register', async (req, res) => {
@@ -111,15 +115,18 @@ router.post('/register', async (req, res) => {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
       
+      // Generate verification token
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      
       // Begin transaction
       await pool.query('BEGIN');
       
       try {
-        // Insert user
+        // Insert user with verification token
         console.log('Inserting new user with role:', role);
         const userResult = await pool.query(
-          'INSERT INTO users (first_name, last_name, email, password, role, agreed_to_terms) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, first_name, last_name, email, role',
-          [firstName, lastName, email, hashedPassword, role, agreedToTerms]
+          'INSERT INTO users (first_name, last_name, email, password, role, agreed_to_terms, verification_token, is_verified) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, first_name, last_name, email, role',
+          [firstName, lastName, email, hashedPassword, role, agreedToTerms, verificationToken, false]
         );
         
         const user = userResult.rows[0];
@@ -188,40 +195,21 @@ router.post('/register', async (req, res) => {
         // Commit transaction
         await pool.query('COMMIT');
         
-        // Generate JWT
-        const payload = {
-          user: {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            profileId: profileId,
-            profileType: profileType
-          }
-        };
+        // Send verification email
+        try {
+          await emailService.sendVerificationEmail(email, verificationToken);
+          console.log('Verification email sent to:', email);
+        } catch (emailError) {
+          console.error('Failed to send verification email:', emailError);
+          // Continue with registration even if email fails
+        }
         
-        jwt.sign(
-          payload,
-          JWT_SECRET,
-          { expiresIn: '7d' },
-          (err, token) => {
-            if (err) throw err;
-            
-            // Return user with token
-            res.status(201).json({
-              token,
-              user: {
-                id: user.id,
-                firstName: user.first_name,
-                lastName: user.last_name,
-                email: user.email,
-                role: user.role,
-                profileId,
-                profileType,
-                profile_completed: role === 'generalUser' ? true : false
-              }
-            });
-          }
-        );
+        // Return success message (no token yet - user must verify email first)
+        res.status(201).json({
+          message: 'Registration successful! Please check your email to verify your account.',
+          requiresVerification: true
+        });
+        
       } catch (err) {
         // Rollback transaction on error
         await pool.query('ROLLBACK');
@@ -236,6 +224,140 @@ router.post('/register', async (req, res) => {
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ message: 'Server error during registration', error: err.message });
+  }
+});
+
+/**
+ * @route GET /api/auth/verify-email
+ * @desc Verify user email with token
+ * @access Public
+ */
+router.get('/verify-email', async (req, res) => {
+  try {
+    const { token } = req.query;
+    
+    if (!token) {
+      return res.status(400).json({ message: 'Verification token is required' });
+    }
+    
+    // Find user with this verification token
+    const userResult = await pool.query(
+      'SELECT id, first_name, last_name, email, role FROM users WHERE verification_token = $1',
+      [token]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ message: 'Invalid or expired verification token' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Update user as verified
+    await pool.query(
+      'UPDATE users SET is_verified = true, verification_token = NULL WHERE id = $1',
+      [user.id]
+    );
+    
+    // Send welcome email
+    try {
+      await emailService.sendWelcomeEmail(user.email, `${user.first_name} ${user.last_name}`);
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+    }
+    
+    // Get profile information
+    const profileInfo = await getUserProfileInfo(user.id, user.role);
+    
+    // Generate JWT token for automatic login
+    const payload = {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        profileId: profileInfo ? profileInfo.profileId : user.id,
+        profileType: profileInfo ? profileInfo.profileType : (user.role === 'generalUser' ? 'general' : null)
+      }
+    };
+    
+    jwt.sign(
+      payload,
+      JWT_SECRET,
+      { expiresIn: '7d' },
+      (err, token) => {
+        if (err) throw err;
+        
+        res.json({
+          message: 'Email verified successfully!',
+          token,
+          user: {
+            id: user.id,
+            firstName: user.first_name,
+            lastName: user.last_name,
+            email: user.email,
+            role: user.role,
+            profileId: profileInfo ? profileInfo.profileId : user.id,
+            profileType: profileInfo ? profileInfo.profileType : (user.role === 'generalUser' ? 'general' : null),
+            profile_completed: user.role === 'generalUser' ? true : (profileInfo !== null)
+          }
+        });
+      }
+    );
+  } catch (err) {
+    console.error('Email verification error:', err);
+    res.status(500).json({ message: 'Server error during email verification' });
+  }
+});
+
+/**
+ * @route POST /api/auth/resend-verification
+ * @desc Resend verification email
+ * @access Public
+ */
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+    
+    // Check if user exists and is not verified
+    const userResult = await pool.query(
+      'SELECT id, email, is_verified, verification_token FROM users WHERE email = $1',
+      [email]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ message: 'User not found' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    if (user.is_verified) {
+      return res.status(400).json({ message: 'Email is already verified' });
+    }
+    
+    // Generate new verification token if needed
+    let verificationToken = user.verification_token;
+    if (!verificationToken) {
+      verificationToken = crypto.randomBytes(32).toString('hex');
+      await pool.query(
+        'UPDATE users SET verification_token = $1 WHERE id = $2',
+        [verificationToken, user.id]
+      );
+    }
+    
+    // Send verification email
+    try {
+      await emailService.sendVerificationEmail(email, verificationToken);
+      res.json({ message: 'Verification email sent successfully' });
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      res.status(500).json({ message: 'Failed to send verification email' });
+    }
+  } catch (err) {
+    console.error('Resend verification error:', err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -255,7 +377,7 @@ router.post('/login', async (req, res) => {
     
     // Check if user exists
     const userResult = await pool.query(
-      'SELECT id, first_name, last_name, email, password, role FROM users WHERE email = $1',
+      'SELECT id, first_name, last_name, email, password, role, is_verified FROM users WHERE email = $1',
       [email]
     );
     
@@ -264,6 +386,15 @@ router.post('/login', async (req, res) => {
     }
     
     const user = userResult.rows[0];
+    
+    // Check if user is verified
+    if (!user.is_verified) {
+      return res.status(401).json({ 
+        message: 'Please verify your email before logging in',
+        requiresVerification: true,
+        email: user.email
+      });
+    }
     
     // Check password
     const isMatch = await bcrypt.compare(password, user.password);
@@ -312,6 +443,98 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error during login' });
+  }
+});
+
+/**
+ * @route POST /api/auth/forgot-password
+ * @desc Request password reset
+ * @access Public
+ */
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+    
+    // Check if user exists
+    const userResult = await pool.query(
+      'SELECT id, email FROM users WHERE email = $1',
+      [email]
+    );
+    
+    if (userResult.rows.length === 0) {
+      // Don't reveal if user exists or not
+      return res.json({ message: 'If an account exists with this email, you will receive a password reset link.' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour from now
+    
+    // Save reset token to database
+    await pool.query(
+      'UPDATE users SET reset_password_token = $1, reset_password_expiry = $2 WHERE id = $3',
+      [resetToken, resetTokenExpiry, user.id]
+    );
+    
+    // Send password reset email
+    try {
+      await emailService.sendPasswordResetEmail(email, resetToken);
+    } catch (emailError) {
+      console.error('Failed to send password reset email:', emailError);
+    }
+    
+    res.json({ message: 'If an account exists with this email, you will receive a password reset link.' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route POST /api/auth/reset-password
+ * @desc Reset password with token
+ * @access Public
+ */
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: 'Token and new password are required' });
+    }
+    
+    // Find user with valid reset token
+    const userResult = await pool.query(
+      'SELECT id, email FROM users WHERE reset_password_token = $1 AND reset_password_expiry > $2',
+      [token, new Date()]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    // Update password and clear reset token
+    await pool.query(
+      'UPDATE users SET password = $1, reset_password_token = NULL, reset_password_expiry = NULL WHERE id = $2',
+      [hashedPassword, user.id]
+    );
+    
+    res.json({ message: 'Password reset successfully!' });
+  } catch (err) {
+    console.error('Password reset error:', err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
@@ -398,10 +621,10 @@ router.get('/create-test-user', async (req, res) => {
     // Begin transaction
     await pool.query('BEGIN');
     
-    // Insert user
+    // Insert user (verified by default for test user)
     const userResult = await pool.query(
-      'INSERT INTO users (first_name, last_name, email, password, role, agreed_to_terms) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, first_name, last_name, email, role',
-      ['Test', 'User', 'test@example.com', hashedPassword, 'consultant', true]
+      'INSERT INTO users (first_name, last_name, email, password, role, agreed_to_terms, is_verified) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, first_name, last_name, email, role',
+      ['Test', 'User', 'test@example.com', hashedPassword, 'consultant', true, true]
     );
     
     const user = userResult.rows[0];
@@ -465,10 +688,10 @@ router.get('/create-test-general-user', async (req, res) => {
     // Begin transaction
     await pool.query('BEGIN');
     
-    // Insert user
+    // Insert user (verified by default for test user)
     const userResult = await pool.query(
-      'INSERT INTO users (first_name, last_name, email, password, role, agreed_to_terms) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, first_name, last_name, email, role',
-      ['Test', 'General', 'testgeneral@example.com', hashedPassword, 'generalUser', true]
+      'INSERT INTO users (first_name, last_name, email, password, role, agreed_to_terms, is_verified) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, first_name, last_name, email, role',
+      ['Test', 'General', 'testgeneral@example.com', hashedPassword, 'generalUser', true, true]
     );
     
     const user = userResult.rows[0];

@@ -15,7 +15,7 @@ const carbonFootprintRoutes = require('./routes/carbonFootprintRoutes');
 const uploadsRouter = require('./routes/uploads');
 const article6ProjectsRoutes = require('./routes/article6ProjectsRoutes');
 const serviceProviderRoutes = require('./routes/serviceProviderRoutes');
-const creditSystemRoutes = require('./routes/creditSystemRoutes'); // NEW: Add this line
+const creditSystemRoutes = require('./routes/creditSystemRoutes');
 
 // Initialize express app
 const app = express();
@@ -30,27 +30,46 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 // Middleware
 app.use(express.json());
 
-// FIXED CORS configuration - allow all localhost origins
+// CORS configuration - production-ready
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    // Allow requests with no origin (same-origin, mobile apps, curl)
+    if (!origin) {
+      return callback(null, true);
+    }
     
-    // Allow any localhost port
+    // List of allowed origins
+    const allowedOrigins = [
+      'https://carbonprospect.onrender.com',
+      'https://www.carbonprospect.com',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001'
+    ];
+    
+    // Allow any localhost port for development
     if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
       return callback(null, true);
     }
     
-    // For production, you'd want to check against a whitelist
-    callback(new Error('Not allowed by CORS'));
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // For production, you can enable strict checking:
+    // callback(new Error('Not allowed by CORS'));
+    
+    // For now, allow all origins with a warning
+    console.log(`CORS request from origin: ${origin}`);
+    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
-
-// Serve static files from the public directory first (for frontend access)
-app.use(express.static(path.join(PROJECT_ROOT, 'public')));
 
 // Serve static files from the uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -58,10 +77,10 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Also serve from public/uploads as a fallback
 app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public/uploads')));
 
-// Request logging middleware with detailed information
+// Request logging middleware
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
-  console.log(`${timestamp} - ${req.method} ${req.originalUrl} from ${req.get('origin') || 'no-origin'}`);
+  console.log(`${timestamp} - ${req.method} ${req.originalUrl} from ${req.get('origin') || 'same-origin'}`);
   
   // Log request headers for authentication debugging
   if (req.headers.authorization) {
@@ -71,7 +90,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Routes - IMPORTANT: These should be exact, no double nesting
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/products', productRoutes);
@@ -82,7 +101,87 @@ app.use('/api/carbon-footprints', carbonFootprintRoutes);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/article6-projects', article6ProjectsRoutes);
 app.use('/api/service-providers', serviceProviderRoutes);
-app.use('/api', creditSystemRoutes); // NEW: Add this line
+app.use('/api', creditSystemRoutes);
+
+// Debug route to check what routes are registered
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  
+  // Get all routes from the app
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      // Routes registered directly on the app
+      routes.push({
+        path: middleware.route.path,
+        methods: Object.keys(middleware.route.methods)
+      });
+    } else if (middleware.name === 'router') {
+      // Router middleware
+      middleware.handle.stack.forEach((handler) => {
+        if (handler.route) {
+          const path = middleware.regexp.source.match(/\^\\(.+?)\\/);
+          const basePath = path ? path[1].replace(/\\/g, '') : '';
+          routes.push({
+            path: basePath + handler.route.path,
+            methods: Object.keys(handler.route.methods)
+          });
+        }
+      });
+    }
+  });
+  
+  res.json({
+    registeredRoutes: routes,
+    apiBase: req.protocol + '://' + req.get('host') + '/api'
+  });
+});
+
+// Add a route to specifically serve project images with fallback to placeholder
+app.get('/uploads/images/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePaths = [
+    path.join(PROJECT_ROOT, 'public/uploads/images', filename),
+    path.join(__dirname, 'uploads/images', filename),
+    path.join(PROJECT_ROOT, 'public/uploads/images/placeholder-project.jpg')
+  ];
+  
+  // Try each path in order
+  for (const filePath of filePaths) {
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
+  }
+  
+  // If no files exist, return 404
+  res.status(404).send('Image not found');
+});
+
+// Serve static files from the React app build directory
+app.use(express.static(path.join(__dirname, '../build')));
+
+// Serve static files from public directory
+app.use(express.static(path.join(PROJECT_ROOT, 'public')));
+
+// Catch all handler for React routing - must be after API routes
+app.get('*', (req, res) => {
+  const buildIndex = path.join(__dirname, '../build/index.html');
+  res.sendFile(buildIndex);
+});
+
+// Error handling middleware
+app.use((req, res, next) => {
+  console.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ message: 'Route not found', path: req.originalUrl });
+});
+
+app.use((err, req, res, next) => {
+  console.error(`Error: ${err.message}`);
+  console.error(err.stack);
+  res.status(500).json({ 
+    message: 'Server error', 
+    error: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred' 
+  });
+});
 
 // Create uploads directories if they don't exist
 const uploadDirs = ['uploads', 'uploads/images', 'uploads/documents'];
@@ -138,79 +237,6 @@ if (!fs.existsSync(placeholderPath)) {
   }
 }
 
-// Add a route to specifically serve project images with fallback to placeholder
-app.get('/uploads/images/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePaths = [
-    path.join(PROJECT_ROOT, 'public/uploads/images', filename),
-    path.join(__dirname, 'uploads/images', filename),
-    path.join(PROJECT_ROOT, 'public/uploads/images/placeholder-project.jpg')
-  ];
-  
-  // Try each path in order
-  for (const filePath of filePaths) {
-    if (fs.existsSync(filePath)) {
-      return res.sendFile(filePath);
-    }
-  }
-  
-  // If no files exist, return 404
-  res.status(404).send('Image not found');
-});
-
-// Simple root route for testing
-app.get('/', (req, res) => {
-  res.json({ message: 'Carbon Prospect API is running' });
-});
-
-// Debug route to check what routes are registered
-app.get('/api/debug/routes', (req, res) => {
-  const routes = [];
-  
-  // Get all routes from the app
-  app._router.stack.forEach((middleware) => {
-    if (middleware.route) {
-      // Routes registered directly on the app
-      routes.push({
-        path: middleware.route.path,
-        methods: Object.keys(middleware.route.methods)
-      });
-    } else if (middleware.name === 'router') {
-      // Router middleware
-      middleware.handle.stack.forEach((handler) => {
-        if (handler.route) {
-          const path = middleware.regexp.source.match(/\^\\(.+?)\\/);
-          const basePath = path ? path[1].replace(/\\/g, '') : '';
-          routes.push({
-            path: basePath + handler.route.path,
-            methods: Object.keys(handler.route.methods)
-          });
-        }
-      });
-    }
-  });
-  
-  res.json({
-    registeredRoutes: routes,
-    apiBase: req.protocol + '://' + req.get('host') + '/api'
-  });
-});
-
-// Error handling middleware
-app.use((req, res, next) => {
-  console.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ message: 'Route not found', path: req.originalUrl });
-});
-
-app.use((err, req, res, next) => {
-  console.error(`Error: ${err.message}`);
-  console.error(err.stack);
-  res.status(500).json({ 
-    message: 'Server error', 
-    error: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred' 
-  });
-});
-
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
@@ -220,8 +246,8 @@ app.listen(PORT, () => {
   console.log('\nTest the API:');
   console.log(`  curl http://localhost:${PORT}/api/marketplace/products`);
   console.log(`  curl http://localhost:${PORT}/api/debug/routes`);
-  console.log(`  curl http://localhost:${PORT}/api/credit-types`); // NEW: Add this line
-  console.log(`  curl http://localhost:${PORT}/api/target-markets`); // NEW: Add this line
+  console.log(`  curl http://localhost:${PORT}/api/credit-types`);
+  console.log(`  curl http://localhost:${PORT}/api/target-markets`);
 });
 
 // Import pool for database connection

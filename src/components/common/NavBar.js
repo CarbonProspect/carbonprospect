@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';  // Use react-router-dom, not react-router
 import { useAuth } from '../../AuthSystem';
 
 const NavBar = () => {

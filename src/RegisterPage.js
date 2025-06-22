@@ -1,4 +1,4 @@
-// RegisterPage.js - Updated with General User type
+// RegisterPage.js - Updated with General User type and Email Verification
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthSystem';
@@ -20,6 +20,7 @@ const RegisterPage = () => {
   });
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
   
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -163,13 +164,24 @@ const RegisterPage = () => {
       console.log('Submitting registration data:', JSON.stringify(registerData, null, 2));
       
       // Call the register function from AuthSystem
-      await register(registerData);
+      const result = await register(registerData);
       
-      // Navigate based on user type
-      if (formData.role === 'generalUser') {
-        navigate('/dashboard');
+      if (result.success) {
+        if (result.requiresVerification) {
+          // Show verification message instead of redirecting
+          setSubmitSuccess(true);
+          setErrors({});
+        } else {
+          // This shouldn't happen with email verification enabled
+          // but if it does, navigate based on user type
+          if (formData.role === 'generalUser') {
+            navigate('/dashboard');
+          } else {
+            navigate('/profile/complete');
+          }
+        }
       } else {
-        navigate('/profile/complete');
+        setErrors({ general: result.error || 'Registration failed' });
       }
     } catch (err) {
       console.error('Registration error:', err);
@@ -187,6 +199,46 @@ const RegisterPage = () => {
       setIsSubmitting(false);
     }
   };
+
+  // Show success message after registration
+  if (submitSuccess) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-md mx-auto">
+          <div className="text-center mb-8">
+            <Link to="/" className="inline-flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mr-2 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3.293 9.707a1 1 0 010-1.414l6-6a1 1 0 011.414 0l6 6a1 1 0 01-1.414 1.414L11 5.414V17a1 1 0 11-2 0V5.414L4.707 9.707a1 1 0 01-1.414 0z" clipRule="evenodd" />
+              </svg>
+              <span className="text-xl font-bold text-green-600">Carbon Prospect</span>
+            </Link>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-md p-6 text-center">
+            <div className="mb-4">
+              <svg className="mx-auto h-12 w-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold mb-4">Check Your Email!</h2>
+            <p className="text-gray-600 mb-6">
+              We've sent a verification link to <strong>{formData.email}</strong>. 
+              Please check your inbox and click the link to verify your account.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              Can't find the email? Check your spam folder or wait a few minutes.
+            </p>
+            <Link
+              to="/login"
+              className="inline-block px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              Go to Login
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div className="container mx-auto px-4 py-8">
