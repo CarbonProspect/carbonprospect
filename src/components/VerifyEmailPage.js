@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from './AuthSystem';
+import { useAuth } from '../AuthSystem'; // Fixed import path
 
 const VerifyEmailPage = () => {
   const [searchParams] = useSearchParams();

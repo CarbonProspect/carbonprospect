@@ -15,7 +15,16 @@ const carbonFootprintRoutes = require('./routes/carbonFootprintRoutes');
 const uploadsRouter = require('./routes/uploads');
 const article6ProjectsRoutes = require('./routes/article6ProjectsRoutes');
 const serviceProviderRoutes = require('./routes/serviceProviderRoutes');
-const creditSystemRoutes = require('./routes/creditSystemRoutes');
+
+// Try to import creditSystemRoutes with error handling
+let creditSystemRoutes;
+try {
+  creditSystemRoutes = require('./routes/creditSystemRoutes');
+  console.log('✅ Credit system routes loaded successfully');
+} catch (err) {
+  console.warn('⚠️ Credit system routes not found, skipping...');
+  console.warn('Error:', err.message);
+}
 
 // Initialize express app
 const app = express();
@@ -101,7 +110,14 @@ app.use('/api/carbon-footprints', carbonFootprintRoutes);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/article6-projects', article6ProjectsRoutes);
 app.use('/api/service-providers', serviceProviderRoutes);
-app.use('/api', creditSystemRoutes);
+
+// Only add credit system routes if they were loaded successfully
+if (creditSystemRoutes) {
+  app.use('/api', creditSystemRoutes);
+  console.log('✅ Credit system routes registered');
+} else {
+  console.log('⚠️ Credit system routes not registered');
+}
 
 // Debug route to check what routes are registered
 app.get('/api/debug/routes', (req, res) => {
@@ -246,8 +262,10 @@ app.listen(PORT, () => {
   console.log('\nTest the API:');
   console.log(`  curl http://localhost:${PORT}/api/marketplace/products`);
   console.log(`  curl http://localhost:${PORT}/api/debug/routes`);
-  console.log(`  curl http://localhost:${PORT}/api/credit-types`);
-  console.log(`  curl http://localhost:${PORT}/api/target-markets`);
+  if (creditSystemRoutes) {
+    console.log(`  curl http://localhost:${PORT}/api/credit-types`);
+    console.log(`  curl http://localhost:${PORT}/api/target-markets`);
+  }
 });
 
 // Import pool for database connection
