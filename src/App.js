@@ -94,6 +94,9 @@ const App = () => {
               <Route path="/" element={<HomePage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/about" element={<AboutPage />} />
               <Route path="/marketplace" element={<MarketplacePage />} />
               
@@ -327,3 +330,4 @@ const App = () => {
 };
 
 export default App;
+// Trigger rebuild
