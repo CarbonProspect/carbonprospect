@@ -459,6 +459,39 @@ router.post('/forgot-password', async (req, res) => {
       return res.status(400).json({ message: 'Email is required' });
     }
     
+    console.log('=== FORGOT PASSWORD DEBUG ===');
+    console.log('Forgot password request for email:', email);
+    
+    // Debug: Check database connection
+    try {
+      const dbCheck = await pool.query('SELECT current_database(), current_user, version()');
+      console.log('Database info:', dbCheck.rows[0]);
+      
+      // Check schema
+      const schemaCheck = await pool.query('SELECT current_schema()');
+      console.log('Current schema:', schemaCheck.rows[0].current_schema);
+      
+      // Check if columns exist
+      const columnCheck = await pool.query(`
+        SELECT column_name, table_schema
+        FROM information_schema.columns 
+        WHERE table_name = 'users' 
+        AND column_name IN ('reset_password_token', 'reset_password_expiry')
+      `);
+      console.log('Password reset columns found:', columnCheck.rows);
+      
+      // Check all columns in users table
+      const allColumns = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users'
+        ORDER BY ordinal_position
+      `);
+      console.log('All columns in users table:', allColumns.rows.map(r => r.column_name));
+    } catch (dbError) {
+      console.error('Database check error:', dbError);
+    }
+    
     // Check if user exists
     const userResult = await pool.query(
       'SELECT id, email FROM users WHERE email = $1',
@@ -471,23 +504,46 @@ router.post('/forgot-password', async (req, res) => {
     }
     
     const user = userResult.rows[0];
+    console.log('User found:', user.id);
     
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour from now
     
+    console.log('Attempting to update user:', user.id);
+    console.log('Reset token:', resetToken.substring(0, 10) + '...');
+    console.log('Reset expiry:', resetTokenExpiry);
+    
     // Save reset token to database
-    await pool.query(
-      'UPDATE users SET reset_password_token = $1, reset_password_expiry = $2 WHERE id = $3',
-      [resetToken, resetTokenExpiry, user.id]
-    );
+    try {
+      await pool.query(
+        'UPDATE users SET reset_password_token = $1, reset_password_expiry = $2 WHERE id = $3',
+        [resetToken, resetTokenExpiry, user.id]
+      );
+      console.log('✅ Database updated successfully');
+    } catch (updateError) {
+      console.error('❌ Database update error:', updateError);
+      throw updateError;
+    }
     
     // Send password reset email
     try {
+      console.log('Sending password reset email...');
+      console.log('Environment variables:');
+      console.log('  EMAIL_FROM:', process.env.EMAIL_FROM);
+      console.log('  FRONTEND_URL:', process.env.FRONTEND_URL);
+      console.log('  SENDGRID_API_KEY exists:', !!process.env.SENDGRID_API_KEY);
+      
       await emailService.sendPasswordResetEmail(email, resetToken);
+      console.log('✅ Password reset email sent successfully');
     } catch (emailError) {
-      console.error('Failed to send password reset email:', emailError);
+      console.error('❌ Failed to send password reset email:', emailError);
+      if (emailError.response) {
+        console.error('SendGrid response:', emailError.response.body);
+      }
     }
+    
+    console.log('=== END FORGOT PASSWORD DEBUG ===');
     
     res.json({ message: 'If an account exists with this email, you will receive a password reset link.' });
   } catch (err) {
@@ -535,6 +591,87 @@ router.post('/reset-password', async (req, res) => {
   } catch (err) {
     console.error('Password reset error:', err);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route POST /api/auth/refresh
+ * @desc Refresh JWT token
+ * @access Private
+ */
+router.post('/refresh', async (req, res) => {
+  try {
+    // Get token from header
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({ message: 'No token, authorization denied' });
+    }
+    
+    try {
+      // Verify current token
+      const decoded = jwt.verify(token, JWT_SECRET);
+      
+      // Get fresh user data
+      const userResult = await pool.query(
+        'SELECT id, first_name, last_name, email, role FROM users WHERE id = $1',
+        [decoded.user.id]
+      );
+      
+      if (userResult.rows.length === 0) {
+        return res.status(401).json({ message: 'User no longer exists' });
+      }
+      
+      const user = userResult.rows[0];
+      
+      // Get profile information
+      const profileInfo = await getUserProfileInfo(user.id, user.role);
+      
+      // Generate new token
+      const payload = {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          profileId: profileInfo ? profileInfo.profileId : user.id,
+          profileType: profileInfo ? profileInfo.profileType : (user.role === 'generalUser' ? 'general' : null)
+        }
+      };
+      
+      jwt.sign(
+        payload,
+        JWT_SECRET,
+        { expiresIn: '7d' },
+        (err, newToken) => {
+          if (err) throw err;
+          
+          res.json({
+            token: newToken,
+            user: {
+              id: user.id,
+              firstName: user.first_name,
+              lastName: user.last_name,
+              email: user.email,
+              role: user.role,
+              profileId: profileInfo ? profileInfo.profileId : user.id,
+              profileType: profileInfo ? profileInfo.profileType : (user.role === 'generalUser' ? 'general' : null),
+              profile_completed: user.role === 'generalUser' ? true : (profileInfo !== null)
+            }
+          });
+        }
+      );
+    } catch (err) {
+      if (err.name === 'JsonWebTokenError') {
+        return res.status(401).json({ message: 'Invalid token' });
+      }
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ message: 'Token expired' });
+      }
+      throw err;
+    }
+  } catch (err) {
+    console.error('Token refresh error:', err);
+    res.status(500).json({ message: 'Server error during token refresh' });
   }
 });
 

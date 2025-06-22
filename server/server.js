@@ -253,12 +253,75 @@ if (!fs.existsSync(placeholderPath)) {
   }
 }
 
+// Import pool for database connection
+const pool = require('./db/pool');
+
+// Debug database connection
+console.log('=== DATABASE CONNECTION DEBUG ===');
+pool.query('SELECT current_database(), current_schema(), version()', (err, result) => {
+  if (err) {
+    console.error('❌ Database connection test failed:', err);
+  } else {
+    console.log('✅ Connected to database:', result.rows[0].current_database);
+    console.log('✅ Current schema:', result.rows[0].current_schema);
+    console.log('✅ PostgreSQL version:', result.rows[0].version);
+  }
+});
+
+// Check if password reset columns exist
+pool.query(`
+  SELECT column_name, table_schema, table_name
+  FROM information_schema.columns 
+  WHERE table_name = 'users' 
+  AND column_name IN ('reset_password_token', 'reset_password_expiry', 'verification_token', 'is_verified')
+  ORDER BY column_name
+`, (err, result) => {
+  if (err) {
+    console.error('❌ Column check failed:', err);
+  } else {
+    console.log(`✅ Found ${result.rows.length} auth-related columns in users table:`);
+    result.rows.forEach(row => {
+      console.log(`   - ${row.column_name} (schema: ${row.table_schema})`);
+    });
+  }
+});
+
+// Also check what tables exist
+pool.query(`
+  SELECT table_name, table_schema 
+  FROM information_schema.tables 
+  WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+  AND table_type = 'BASE TABLE'
+  ORDER BY table_name
+`, (err, result) => {
+  if (err) {
+    console.error('❌ Table list check failed:', err);
+  } else {
+    console.log(`✅ Found ${result.rows.length} tables in database`);
+    const userTable = result.rows.find(r => r.table_name === 'users');
+    if (userTable) {
+      console.log(`   - 'users' table found in schema: ${userTable.table_schema}`);
+    } else {
+      console.log('   ⚠️  WARNING: users table not found!');
+    }
+  }
+});
+
+console.log('=== END DATABASE DEBUG ===');
+
 // Start the server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`http://localhost:${PORT}`);
   console.log('Successfully connected to PostgreSQL database');
   console.log('Connected to database: carbon_marketplace');
+  console.log('\nEnvironment check:');
+  console.log(`  NODE_ENV: ${process.env.NODE_ENV}`);
+  console.log(`  DATABASE_URL exists: ${!!process.env.DATABASE_URL}`);
+  console.log(`  SENDGRID_API_KEY exists: ${!!process.env.SENDGRID_API_KEY}`);
+  console.log(`  EMAIL_FROM: ${process.env.EMAIL_FROM}`);
+  console.log(`  FRONTEND_URL: ${process.env.FRONTEND_URL}`);
+  console.log(`  JWT_SECRET exists: ${!!process.env.JWT_SECRET}`);
   console.log('\nTest the API:');
   console.log(`  curl http://localhost:${PORT}/api/marketplace/products`);
   console.log(`  curl http://localhost:${PORT}/api/debug/routes`);
@@ -267,6 +330,3 @@ app.listen(PORT, () => {
     console.log(`  curl http://localhost:${PORT}/api/target-markets`);
   }
 });
-
-// Import pool for database connection
-const pool = require('./db/pool');
