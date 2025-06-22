@@ -7,8 +7,26 @@ const crypto = require('crypto');
 // Import pool directly without destructuring
 const pool = require('../db/pool');
 
-// Import email service
-const emailService = require('../../src/Services/emailService');
+// Import email service with error handling
+let emailService;
+try {
+  emailService = require('../../src/Services/emailService');
+  console.log('✅ Email service loaded successfully');
+} catch (err) {
+  console.error('❌ Failed to load email service:', err.message);
+  // Create a mock service to prevent crashes
+  emailService = {
+    sendVerificationEmail: async (email, token) => {
+      console.log(`MOCK: Would send verification email to ${email} with token ${token.substring(0, 10)}...`);
+    },
+    sendPasswordResetEmail: async (email, token) => {
+      console.log(`MOCK: Would send password reset email to ${email}`);
+    },
+    sendWelcomeEmail: async (email, name) => {
+      console.log(`MOCK: Would send welcome email to ${name} at ${email}`);
+    }
+  };
+}
 
 // Add debug logging to verify pool is properly imported
 console.log('Auth routes loaded, pool type:', typeof pool);
@@ -194,14 +212,24 @@ router.post('/register', async (req, res) => {
         
         // Commit transaction
         await pool.query('COMMIT');
+        console.log('✅ Database transaction committed successfully');
         
         // Send verification email
         try {
+          console.log('Attempting to send verification email...');
+          console.log('Email service environment check:');
+          console.log('  SENDGRID_API_KEY exists:', !!process.env.SENDGRID_API_KEY);
+          console.log('  EMAIL_FROM:', process.env.EMAIL_FROM);
+          console.log('  FRONTEND_URL:', process.env.FRONTEND_URL);
+          
           await emailService.sendVerificationEmail(email, verificationToken);
-          console.log('Verification email sent to:', email);
+          console.log('✅ Verification email sent successfully to:', email);
         } catch (emailError) {
-          console.error('Failed to send verification email:', emailError);
+          console.error('❌ Failed to send verification email:', emailError);
+          console.error('Error details:', emailError.response?.body || emailError.message);
           // Continue with registration even if email fails
+          // But log it prominently
+          console.warn('⚠️  USER REGISTERED BUT EMAIL NOT SENT - Manual verification may be needed');
         }
         
         // Return success message (no token yet - user must verify email first)
@@ -883,6 +911,32 @@ router.get('/create-test-general-user', async (req, res) => {
     if (pool.query) await pool.query('ROLLBACK');
     console.error('Test general user creation error:', err);
     res.status(500).json({ message: 'Failed to create test general user', error: err.message });
+  }
+});
+
+/**
+ * @route GET /api/auth/verify-all-users
+ * @desc Temporary endpoint to verify all users (REMOVE IN PRODUCTION)
+ * @access Public
+ */
+router.get('/verify-all-users', async (req, res) => {
+  try {
+    // Only allow in development
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ message: 'Not allowed in production' });
+    }
+    
+    const result = await pool.query(
+      'UPDATE users SET is_verified = true WHERE is_verified = false OR is_verified IS NULL RETURNING id, email'
+    );
+    
+    res.json({ 
+      message: `Successfully verified ${result.rowCount} users`,
+      verifiedUsers: result.rows
+    });
+  } catch (err) {
+    console.error('Verify all users error:', err);
+    res.status(500).json({ message: 'Failed to verify users', error: err.message });
   }
 });
 
