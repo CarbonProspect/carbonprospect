@@ -1,4 +1,4 @@
-// api-config.js - Production-scalable configuration
+// api-config.js - Production-scalable configuration with fixed refresh logic
 import axios from 'axios';
 
 // Environment-based API configuration
@@ -32,6 +32,22 @@ const api = axios.create({
   },
   withCredentials: true,
 });
+
+// Track if we're currently refreshing to prevent loops
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  
+  failedQueue = [];
+};
 
 // Request interceptor for auth tokens
 api.interceptors.request.use(
@@ -72,31 +88,77 @@ api.interceptors.response.use(
       console.error('API Error:', {
         url: error.config?.url,
         status: error.response?.status,
-        message: error.response?.data?.message || error.message
+        message: error.response?.data?.message || error.message,
+        isRefreshRequest: error.config?.url?.includes('/auth/refresh')
       });
-    } else {
-      // In production, send to error tracking service
-      // Example: Sentry.captureException(error);
+    }
+    
+    // Don't retry refresh requests to prevent infinite loops
+    if (error.config?.url?.includes('/auth/refresh')) {
+      // Clear auth state
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      isRefreshing = false;
+      processQueue(error, null);
+      
+      // Only redirect if we're not already on the login page
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login?session=expired';
+      }
+      return Promise.reject(error);
     }
     
     // Handle authentication errors
     if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // If we're already refreshing, queue this request
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
+      }
+      
       originalRequest._retry = true;
+      isRefreshing = true;
       
       try {
+        // Only attempt refresh if we have a token
+        const currentToken = localStorage.getItem('token');
+        if (!currentToken) {
+          throw new Error('No token available');
+        }
+        
         // Attempt token refresh
         const refreshResponse = await api.post('/auth/refresh');
         const newToken = refreshResponse.data.token;
         
         localStorage.setItem('token', newToken);
+        if (refreshResponse.data.user) {
+          localStorage.setItem('user', JSON.stringify(refreshResponse.data.user));
+        }
+        
+        processQueue(null, newToken);
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed, redirect to login
+        processQueue(refreshError, null);
+        
+        // Clear auth state
         localStorage.removeItem('token');
-        window.location.href = '/login?session=expired';
+        localStorage.removeItem('user');
+        
+        // Only redirect if we're not already on the login page
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login?session=expired';
+        }
         return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
       }
     }
     
@@ -198,6 +260,13 @@ export const healthCheck = async () => {
   } catch (error) {
     return false;
   }
+};
+
+// Logout function to clear auth state
+export const logout = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
 };
 
 export default api;

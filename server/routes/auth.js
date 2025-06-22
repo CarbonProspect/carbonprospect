@@ -370,25 +370,36 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
+    console.log('=== LOGIN DEBUG ===');
+    console.log('Login attempt for email:', email);
+    console.log('Request body keys:', Object.keys(req.body));
+    
     // Validate required fields
     if (!email || !password) {
+      console.log('Missing email or password');
       return res.status(400).json({ message: 'Please provide email and password' });
     }
     
     // Check if user exists
+    console.log('Checking if user exists...');
     const userResult = await pool.query(
       'SELECT id, first_name, last_name, email, password, role, is_verified FROM users WHERE email = $1',
       [email]
     );
     
+    console.log('User query returned rows:', userResult.rows.length);
+    
     if (userResult.rows.length === 0) {
+      console.log('No user found with email:', email);
       return res.status(400).json({ message: 'Invalid credentials' });
     }
     
     const user = userResult.rows[0];
+    console.log('User found:', { id: user.id, email: user.email, role: user.role, is_verified: user.is_verified });
     
     // Check if user is verified
     if (!user.is_verified) {
+      console.log('User not verified');
       return res.status(401).json({ 
         message: 'Please verify your email before logging in',
         requiresVerification: true,
@@ -397,14 +408,19 @@ router.post('/login', async (req, res) => {
     }
     
     // Check password
+    console.log('Checking password...');
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log('Password match:', isMatch);
     
     if (!isMatch) {
+      console.log('Invalid password');
       return res.status(400).json({ message: 'Invalid credentials' });
     }
     
     // Get profile information
+    console.log('Getting profile information...');
     const profileInfo = await getUserProfileInfo(user.id, user.role);
+    console.log('Profile info:', profileInfo);
     
     // Generate JWT
     const payload = {
@@ -417,12 +433,21 @@ router.post('/login', async (req, res) => {
       }
     };
     
+    console.log('JWT payload:', payload);
+    console.log('JWT_SECRET exists:', !!JWT_SECRET);
+    
     jwt.sign(
       payload,
       JWT_SECRET,
       { expiresIn: '7d' },
       (err, token) => {
-        if (err) throw err;
+        if (err) {
+          console.error('JWT sign error:', err);
+          throw err;
+        }
+        
+        console.log('JWT generated successfully');
+        console.log('=== END LOGIN DEBUG ===');
         
         // Return user with token
         res.json({
@@ -442,6 +467,8 @@ router.post('/login', async (req, res) => {
     );
   } catch (err) {
     console.error('Login error:', err);
+    console.error('Error stack:', err.stack);
+    console.log('=== END LOGIN DEBUG (ERROR) ===');
     res.status(500).json({ message: 'Server error during login' });
   }
 });
