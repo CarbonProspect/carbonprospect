@@ -1,6 +1,6 @@
 // src/AuthSystem.js
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import api from './api-config'; // Use the centralized API configuration
+import api, { apiCall } from './api-config'; // Import both api and apiCall
 
 // Create Auth Context
 const AuthContext = createContext();
@@ -96,38 +96,69 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
   }, []);
   
-  // Register user
+  // Register user - UPDATED to handle email verification flow
   const register = async (userData) => {
     try {
       setLoading(true);
       
-      // Make API request to register using the api instance
-      const response = await api.post('/auth/register', userData);
+      // Use apiCall which handles status codes better
+      const response = await apiCall('POST', '/auth/register', userData);
       
-      const { token, user } = response.data;
+      // The backend returns a 201 status with message and requiresVerification
+      // for email verification flow
+      if (response.message && response.requiresVerification) {
+        return {
+          success: true,
+          message: response.message,
+          requiresVerification: response.requiresVerification
+        };
+      }
       
-      // Add profileId equal to user ID
-      user.profileId = user.id;
+      // If we get a token (shouldn't happen with email verification, but handle legacy case)
+      if (response.token && response.user) {
+        const { token, user } = response;
+        
+        // Add profileId equal to user ID
+        user.profileId = user.id;
+        
+        // Set profile type based on role
+        user.profileType = 
+          user.role === 'solutionProvider' ? 'provider' : 
+          user.role === 'projectDeveloper' ? 'developer' : 
+          user.role === 'consultant' ? 'consultant' : 
+          user.role === 'generalUser' ? 'general' : '';
+        
+        // Set token and user
+        setAuthToken(token);
+        setCurrentUser(user);
+        setAuthenticated(true);
+        setLastChecked(Date.now());
+        
+        return { success: true, user };
+      }
       
-      // Set profile type based on role - Updated to include generalUser
-      user.profileType = 
-        user.role === 'solutionProvider' ? 'provider' : 
-        user.role === 'projectDeveloper' ? 'developer' : 
-        user.role === 'consultant' ? 'consultant' : 
-        user.role === 'generalUser' ? 'general' : '';
-      
-      // Set token and user
-      setAuthToken(token);
-      setCurrentUser(user);
-      setAuthenticated(true);
-      setLastChecked(Date.now());
-      
-      return { success: true, user };
+      // Default success response
+      return {
+        success: true,
+        ...response
+      };
     } catch (error) {
       console.error('Registration error:', error);
+      
+      // Check if it's actually a success (201 status code)
+      // This handles cases where api.post might throw on 201 status
+      if (error.response?.status === 201) {
+        const data = error.response.data;
+        return {
+          success: true,
+          message: data.message,
+          requiresVerification: data.requiresVerification
+        };
+      }
+      
       return { 
         success: false, 
-        error: error.response?.data?.message || 'Registration failed' 
+        error: error.response?.data?.message || error.message || 'Registration failed' 
       };
     } finally {
       setLoading(false);
@@ -177,6 +208,16 @@ export const AuthProvider = ({ children }) => {
         console.error('Error response data:', error.response.data);
         console.error('Error response status:', error.response.status);
         console.error('Error response headers:', error.response.headers);
+        
+        // Check for email verification requirement
+        if (error.response.data?.requiresVerification) {
+          return {
+            success: false,
+            requiresVerification: true,
+            email: error.response.data.email,
+            error: error.response.data.message
+          };
+        }
       } else if (error.request) {
         // The request was made but no response was received
         console.error('No response received from server');
@@ -242,6 +283,61 @@ export const AuthProvider = ({ children }) => {
     return currentUser.profile_completed || false;
   };
   
+  // Verify email with token (for email verification flow)
+  const verifyEmail = async (token) => {
+    try {
+      setLoading(true);
+      
+      const response = await api.get(`/auth/verify-email?token=${token}`);
+      
+      if (response.data.token && response.data.user) {
+        const { token: authToken, user } = response.data;
+        
+        // Add profileId equal to user ID
+        user.profileId = user.id;
+        
+        // Set profile type based on role
+        user.profileType = 
+          user.role === 'solutionProvider' ? 'provider' : 
+          user.role === 'projectDeveloper' ? 'developer' : 
+          user.role === 'consultant' ? 'consultant' : 
+          user.role === 'generalUser' ? 'general' : '';
+        
+        // Set token and user (auto-login after verification)
+        setAuthToken(authToken);
+        setCurrentUser(user);
+        setAuthenticated(true);
+        setLastChecked(Date.now());
+        
+        return { success: true, user, message: response.data.message };
+      }
+      
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Email verification error:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.message || 'Email verification failed' 
+      };
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Resend verification email
+  const resendVerificationEmail = async (email) => {
+    try {
+      const response = await api.post('/auth/resend-verification', { email });
+      return { success: true, message: response.data.message };
+    } catch (error) {
+      console.error('Resend verification error:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.message || 'Failed to resend verification email' 
+      };
+    }
+  };
+  
   return (
     <AuthContext.Provider
       value={{
@@ -257,7 +353,9 @@ export const AuthProvider = ({ children }) => {
         isProfessionalUser,
         getUserDisplayName,
         hasCompletedProfile,
-        checkAuthStatus
+        checkAuthStatus,
+        verifyEmail,
+        resendVerificationEmail
       }}
     >
       {children}
