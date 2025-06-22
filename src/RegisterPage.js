@@ -166,12 +166,22 @@ const RegisterPage = () => {
       // Call the register function from AuthSystem
       const result = await register(registerData);
       
+      console.log('Registration result:', result);
+      console.log('Result properties:', {
+        success: result.success,
+        message: result.message,
+        requiresVerification: result.requiresVerification,
+        error: result.error
+      });
+      
       // Check if we got a successful response (201 status)
-      if (result.message && result.requiresVerification) {
+      if (result.success && result.message && result.requiresVerification) {
+        console.log('Showing success - email verification required');
         // Registration was successful, show verification message
         setSubmitSuccess(true);
         setErrors({});
       } else if (result.success) {
+        console.log('Success but no verification required');
         // Legacy success format (if backend changes)
         if (result.requiresVerification) {
           setSubmitSuccess(true);
@@ -186,6 +196,7 @@ const RegisterPage = () => {
           }
         }
       } else {
+        console.log('Registration failed:', result);
         setErrors({ general: result.error || result.message || 'Registration failed' });
       }
     } catch (err) {

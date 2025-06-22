@@ -101,22 +101,22 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
       
-      // Use apiCall which handles status codes better
-      const response = await apiCall('POST', '/auth/register', userData);
+      // Use api.post directly to handle 201 status properly
+      const response = await api.post('/auth/register', userData);
       
       // The backend returns a 201 status with message and requiresVerification
-      // for email verification flow
-      if (response.message && response.requiresVerification) {
+      // Check response.data since axios puts the response body in data
+      if (response.data && response.data.message && response.data.requiresVerification) {
         return {
           success: true,
-          message: response.message,
-          requiresVerification: response.requiresVerification
+          message: response.data.message,
+          requiresVerification: response.data.requiresVerification
         };
       }
       
       // If we get a token (shouldn't happen with email verification, but handle legacy case)
-      if (response.token && response.user) {
-        const { token, user } = response;
+      if (response.data && response.data.token && response.data.user) {
+        const { token, user } = response.data;
         
         // Add profileId equal to user ID
         user.profileId = user.id;
@@ -137,13 +137,13 @@ export const AuthProvider = ({ children }) => {
         return { success: true, user };
       }
       
-      // Default success response
+      // Default success response - make sure we handle the data property
       return {
         success: true,
-        ...response
+        ...(response.data || response)
       };
     } catch (error) {
-      console.error('Registration error:', error);
+      console.error('Registration error in AuthSystem:', error);
       
       // Check if it's actually a success (201 status code)
       // This handles cases where api.post might throw on 201 status
