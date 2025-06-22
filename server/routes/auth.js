@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const pool = require('../db/pool');
 
 // Import email service
-const emailService = require('../services/emailService');
+const emailService = require('../../Services/emailService');
 
 // Add debug logging to verify pool is properly imported
 console.log('Auth routes loaded, pool type:', typeof pool);
