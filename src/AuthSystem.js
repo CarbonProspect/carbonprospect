@@ -105,12 +105,13 @@ export const AuthProvider = ({ children }) => {
       const response = await api.post('/auth/register', userData);
       
       // The backend returns a 201 status with message and requiresVerification
-      // Check response.data since axios puts the response body in data
-      if (response.data && response.data.message && response.data.requiresVerification) {
+      // For successful registration with email verification
+      if (response.status === 201 && response.data) {
+        // Always return success: true for 201 responses
         return {
           success: true,
           message: response.data.message,
-          requiresVerification: response.data.requiresVerification
+          requiresVerification: response.data.requiresVerification || false
         };
       }
       
@@ -137,22 +138,21 @@ export const AuthProvider = ({ children }) => {
         return { success: true, user };
       }
       
-      // Default success response - make sure we handle the data property
+      // This shouldn't happen, but handle it
       return {
-        success: true,
-        ...(response.data || response)
+        success: false,
+        error: 'Unexpected response format'
       };
     } catch (error) {
       console.error('Registration error in AuthSystem:', error);
       
-      // Check if it's actually a success (201 status code)
-      // This handles cases where api.post might throw on 201 status
+      // axios should not throw on 201, but just in case
       if (error.response?.status === 201) {
         const data = error.response.data;
         return {
           success: true,
-          message: data.message,
-          requiresVerification: data.requiresVerification
+          message: data.message || 'Registration successful',
+          requiresVerification: data.requiresVerification || false
         };
       }
       
