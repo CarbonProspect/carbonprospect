@@ -52,6 +52,7 @@ app.use(cors({
     const allowedOrigins = [
       'https://carbonprospect.onrender.com',
       'https://www.carbonprospect.com',
+      'https://carbonprospect.com',
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002',
@@ -155,62 +156,81 @@ app.use('/api/*', (req, res) => {
   res.status(404).json({ message: 'API endpoint not found', path: req.originalUrl });
 });
 
-// Serve static files from the uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// IMPORTANT: Serve uploads BEFORE the static build files
+// This ensures uploads are accessible in production
+
+// Create uploads directories if they don't exist
+const uploadDirs = [
+  path.join(__dirname, 'uploads'),
+  path.join(__dirname, 'uploads/images'),
+  path.join(__dirname, 'uploads/documents'),
+  path.join(PROJECT_ROOT, 'public/uploads'),
+  path.join(PROJECT_ROOT, 'public/uploads/images')
+];
+
+uploadDirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`Created directory: ${dir}`);
+  }
+});
+
+// Serve static files from the uploads directory with proper headers
+app.use('/uploads', (req, res, next) => {
+  // Set cache headers for images
+  if (req.path.match(/\.(jpg|jpeg|png|gif|svg|webp)$/i)) {
+    res.set('Cache-Control', 'public, max-age=86400'); // 1 day
+  }
+  next();
+});
+
+// Serve uploads from multiple locations with fallback
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  fallthrough: true,
+  setHeaders: (res, path) => {
+    // Ensure images are served with correct content type
+    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+      res.set('Content-Type', 'image/jpeg');
+    } else if (path.endsWith('.png')) {
+      res.set('Content-Type', 'image/png');
+    }
+  }
+}));
 
 // Also serve from public/uploads as a fallback
-app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public/uploads')));
+app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public/uploads'), {
+  fallthrough: true
+}));
 
-// Add a route to specifically serve project images with fallback to placeholder
+// Add a route to specifically serve images with multiple fallbacks
 app.get('/uploads/images/:filename', (req, res) => {
   const filename = req.params.filename;
   const filePaths = [
-    path.join(PROJECT_ROOT, 'public/uploads/images', filename),
     path.join(__dirname, 'uploads/images', filename),
-    path.join(PROJECT_ROOT, 'public/uploads/images/placeholder-project.jpg')
+    path.join(PROJECT_ROOT, 'public/uploads/images', filename),
+    path.join(PROJECT_ROOT, 'build/uploads/images', filename)
   ];
+  
+  console.log(`Looking for image: ${filename}`);
   
   // Try each path in order
   for (const filePath of filePaths) {
     if (fs.existsSync(filePath)) {
+      console.log(`Found image at: ${filePath}`);
       return res.sendFile(filePath);
     }
   }
   
-  // If no files exist, return 404
-  res.status(404).send('Image not found');
-});
-
-// Serve static files from the React app build directory
-app.use(express.static(path.join(__dirname, '../build')));
-
-// Serve static files from public directory
-app.use(express.static(path.join(PROJECT_ROOT, 'public')));
-
-// Catch all handler for React routing - must be after API routes
-app.get('*', (req, res) => {
-  const buildIndex = path.join(__dirname, '../build/index.html');
-  res.sendFile(buildIndex);
-});
-
-// General error handling middleware (for actual errors, not 404s)
-app.use((err, req, res, next) => {
-  console.error(`Error: ${err.message}`);
-  console.error(err.stack);
-  res.status(500).json({ 
-    message: 'Server error', 
-    error: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred' 
-  });
-});
-
-// Create uploads directories if they don't exist
-const uploadDirs = ['uploads', 'uploads/images', 'uploads/documents'];
-uploadDirs.forEach(dir => {
-  const dirPath = path.join(__dirname, dir);
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-    console.log(`Created directory: ${dirPath}`);
+  // If no file found, try to serve placeholder
+  const placeholderPath = path.join(PROJECT_ROOT, 'public/uploads/images/placeholder-project.jpg');
+  if (fs.existsSync(placeholderPath)) {
+    console.log(`Serving placeholder for missing image: ${filename}`);
+    return res.sendFile(placeholderPath);
   }
+  
+  // If no files exist, return 404
+  console.log(`Image not found: ${filename}`);
+  res.status(404).send('Image not found');
 });
 
 // Create public directory structure
@@ -256,6 +276,33 @@ if (!fs.existsSync(placeholderPath)) {
     console.error(`Failed to create placeholder: ${err.message}`);
   }
 }
+
+// Serve static files from the React app build directory
+// IMPORTANT: This should come AFTER the uploads routes
+app.use(express.static(path.join(__dirname, '../build')));
+
+// Serve static files from public directory
+app.use(express.static(path.join(PROJECT_ROOT, 'public')));
+
+// Catch all handler for React routing - must be after API routes and static files
+app.get('*', (req, res) => {
+  const buildIndex = path.join(__dirname, '../build/index.html');
+  if (fs.existsSync(buildIndex)) {
+    res.sendFile(buildIndex);
+  } else {
+    res.status(404).send('Build not found. Please run npm run build.');
+  }
+});
+
+// General error handling middleware (for actual errors, not 404s)
+app.use((err, req, res, next) => {
+  console.error(`Error: ${err.message}`);
+  console.error(err.stack);
+  res.status(500).json({ 
+    message: 'Server error', 
+    error: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred' 
+  });
+});
 
 // Import pool for database connection
 const pool = require('./db/pool');

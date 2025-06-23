@@ -1,7 +1,8 @@
-// MarketplacePage.js - Updated with multiple category selection
+// MarketplacePage.js - Updated with multiple category selection and image URL fixes
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthSystem';
+import { getImageUrl, handleImageError } from './utils/imageUrlHelper';
 
 // Dynamically set API base URL based on environment
 const API_BASE = process.env.NODE_ENV === 'production' 
@@ -278,25 +279,6 @@ const MarketplacePage = () => {
     }
   };
   
-  // Helper function to fix image URLs
-  const getSecureImageUrl = (imageUrl) => {
-    if (!imageUrl) return '/uploads/images/placeholder-project.jpg';
-    
-    if (imageUrl.startsWith('http://localhost:3001')) {
-      return imageUrl.replace('http://localhost:3001', '');
-    }
-    
-    if (imageUrl.startsWith('/')) {
-      return imageUrl;
-    }
-    
-    if (imageUrl.startsWith('http://')) {
-      return imageUrl.replace('http://', 'https://');
-    }
-    
-    return imageUrl;
-  };
-  
   // Parse JSONB fields safely
   const parseJsonField = (field, defaultValue = []) => {
     if (!field) return defaultValue;
@@ -309,7 +291,6 @@ const MarketplacePage = () => {
     }
     return field;
   };
-  
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
@@ -591,13 +572,10 @@ const MarketplacePage = () => {
                   >
                     <div className="relative h-48 overflow-hidden">
                       <img 
-                        src={getSecureImageUrl(product.image_url)} 
+                        src={getImageUrl(product.image_url)} 
                         alt={product.name}
                         className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.target.onerror = null;
-                          e.target.src = '/uploads/images/placeholder-project.jpg';
-                        }}
+                        onError={handleImageError}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
                     </div>
@@ -669,13 +647,10 @@ const MarketplacePage = () => {
                     >
                       <div className="relative h-48 overflow-hidden bg-gray-100">
                         <img 
-                          src={getSecureImageUrl(provider.image_url)} 
+                          src={getImageUrl(provider.image_url)} 
                           alt={provider.company_name}
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.onerror = null;
-                            e.target.src = '/uploads/images/placeholder-project.jpg';
-                          }}
+                          onError={handleImageError}
                         />
                       </div>
                       

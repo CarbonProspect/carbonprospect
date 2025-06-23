@@ -1,520 +1,299 @@
-// components/ComplianceReportTemplate.js
-import React from 'react';
+// components/ProviderAnalyticsDashboard.js
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../AuthSystem';
+import api from '../api-config';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis
+  LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
 
-const ComplianceReportTemplate = ({ reportData, reportType = 'standard' }) => {
-  const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
-  
-  // Determine which sections to show based on report type and jurisdiction
-  const getRequiredSections = () => {
-    const sections = {
-      standard: ['executive', 'emissions', 'methodology', 'reduction', 'compliance'],
-      regulatory: ['executive', 'emissions', 'methodology', 'boundaries', 'data', 'assurance', 'compliance', 'governance'],
-      tcfd: ['executive', 'governance', 'strategy', 'risks', 'metrics', 'scenarios'],
-      eu_csrd: ['executive', 'double_materiality', 'emissions', 'taxonomy', 'targets', 'governance', 'assurance'],
-      nger: ['executive', 'facility', 'emissions', 'energy', 'methods', 'uncertainty', 'verification']
-    };
-    
-    return sections[reportType] || sections.standard;
+const ProviderAnalyticsDashboard = () => {
+  const { currentUser } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [analytics, setAnalytics] = useState({
+    products: [],
+    totalViews: 0,
+    totalSaves: 0,
+    totalInquiries: 0,
+    viewsTrend: [],
+    categoryBreakdown: [],
+    topProducts: []
+  });
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+
+  const fetchAnalytics = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch products with their analytics
+      const productsResponse = await api.get('/products/user');
+      const products = productsResponse.data.products || productsResponse.data || [];
+      
+      // For now, we'll use mock data for analytics
+      // In a real implementation, this would come from your analytics API
+      const mockAnalytics = generateMockAnalytics(products);
+      
+      setAnalytics(mockAnalytics);
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const requiredSections = getRequiredSections();
+  // Generate mock analytics data
+  const generateMockAnalytics = (products) => {
+    const totalViews = products.reduce((sum, p) => sum + (Math.floor(Math.random() * 500) + 50), 0);
+    const totalSaves = products.reduce((sum, p) => sum + (Math.floor(Math.random() * 50) + 5), 0);
+    const totalInquiries = products.reduce((sum, p) => sum + (Math.floor(Math.random() * 20) + 2), 0);
+    
+    // Generate views trend for last 30 days
+    const viewsTrend = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (29 - i));
+      return {
+        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        views: Math.floor(Math.random() * 50) + 10,
+        saves: Math.floor(Math.random() * 5) + 1
+      };
+    });
+    
+    // Category breakdown
+    const categories = [...new Set(products.map(p => p.category || 'Other'))];
+    const categoryBreakdown = categories.map(cat => ({
+      name: cat,
+      value: products.filter(p => (p.category || 'Other') === cat).length,
+      views: Math.floor(Math.random() * 200) + 50
+    }));
+    
+    // Top products by views
+    const topProducts = products.slice(0, 5).map(p => ({
+      name: p.name,
+      views: Math.floor(Math.random() * 300) + 100,
+      saves: Math.floor(Math.random() * 30) + 10,
+      inquiries: Math.floor(Math.random() * 10) + 2
+    }));
+    
+    return {
+      products,
+      totalViews,
+      totalSaves,
+      totalInquiries,
+      viewsTrend,
+      categoryBreakdown,
+      topProducts
+    };
+  };
+
+  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-white">
-      {/* Report Header - Always shown */}
-      <div className="border-b-4 border-green-600 pb-6 mb-8">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              {reportType === 'regulatory' ? 'Regulatory Compliance Report' : 
-               reportType === 'tcfd' ? 'TCFD Climate Disclosure Report' :
-               reportType === 'eu_csrd' ? 'CSRD Sustainability Report' :
-               reportType === 'nger' ? 'NGER Compliance Report' :
-               'Carbon Emissions Report'}
-            </h1>
-            <p className="text-gray-600 mt-2">{reportData.companyName}</p>
-            <p className="text-sm text-gray-500">
-              Report ID: {reportData.reportId} | Generated: {reportData.formattedDate}
-            </p>
+    <div className="space-y-6">
+      {/* Overview Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Total Products</p>
+              <p className="text-2xl font-bold text-gray-800">{analytics.products.length}</p>
+            </div>
+            <div className="p-3 bg-purple-100 rounded-full">
+              <svg className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-sm text-gray-600">Reporting Period</p>
-            <p className="font-semibold">{reportData.reportingPeriod || 'Annual'}</p>
-            <p className="text-sm text-gray-600 mt-1">Baseline Year</p>
-            <p className="font-semibold">{reportData.baselineYear || new Date().getFullYear()}</p>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Total Views</p>
+              <p className="text-2xl font-bold text-gray-800">{analytics.totalViews.toLocaleString()}</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-full">
+              <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Total Saves</p>
+              <p className="text-2xl font-bold text-gray-800">{analytics.totalSaves}</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-full">
+              <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-600">Inquiries</p>
+              <p className="text-2xl font-bold text-gray-800">{analytics.totalInquiries}</p>
+            </div>
+            <div className="p-3 bg-yellow-100 rounded-full">
+              <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Executive Summary - Required for all */}
-      {requiredSections.includes('executive') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Executive Summary</h2>
-          <div className="bg-green-50 p-6 rounded-lg">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div>
-                <p className="text-sm text-gray-600">Total Emissions</p>
-                <p className="text-xl font-bold">{reportData.emissions.total.toFixed(2)} tCO2e</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Reduction Target</p>
-                <p className="text-xl font-bold">{reportData.reductionTarget}%</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Target Year</p>
-                <p className="text-xl font-bold">{new Date().getFullYear() + 5}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Compliance Status</p>
-                <p className="text-xl font-bold text-green-700">
-                  {reportData.regulatoryGroup > 0 ? 'Required' : 'Voluntary'}
-                </p>
-              </div>
-            </div>
-            <p className="text-gray-700">
-              This report presents the greenhouse gas emissions inventory for {reportData.companyName} 
-              for the {reportData.reportingPeriod || 'annual'} reporting period. 
-              Total emissions amount to {reportData.emissions.total.toFixed(2)} tonnes CO2e, 
-              with a reduction target of {reportData.reductionTarget}% by {new Date().getFullYear() + 5}.
-            </p>
-          </div>
-        </section>
-      )}
+      {/* Views Trend Chart */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold mb-4">Views & Saves Trend (Last 30 Days)</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={analytics.viewsTrend}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Line type="monotone" dataKey="views" stroke="#3b82f6" name="Views" strokeWidth={2} />
+            <Line type="monotone" dataKey="saves" stroke="#10b981" name="Saves" strokeWidth={2} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
 
-      {/* Double Materiality Assessment - EU CSRD specific */}
-      {requiredSections.includes('double_materiality') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Double Materiality Assessment</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-semibold mb-2">Financial Materiality</h3>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>Carbon pricing exposure: ${(reportData.emissions.total * reportData.carbonCreditPrice).toLocaleString()}</li>
-                <li>Energy cost risks from price volatility</li>
-                <li>Stranded asset risk from transition</li>
-                <li>Capital requirements for net-zero transition</li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Impact Materiality</h3>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>Direct GHG emissions: {reportData.emissions.scope1.toFixed(2)} tCO2e</li>
-                <li>Value chain emissions: {reportData.emissions.scope3.toFixed(2)} tCO2e</li>
-                <li>Contribution to climate change</li>
-                <li>Impact on local air quality</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Governance - Required for TCFD and EU CSRD */}
-      {requiredSections.includes('governance') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Governance</h2>
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold mb-2">Board Oversight</h3>
-              <p className="text-gray-700 text-sm">
-                The Board of Directors maintains oversight of climate-related risks and opportunities through 
-                quarterly reviews of emissions performance and progress against targets.
-              </p>
-            </div>
-            <div>
-              <h3 className="font-semibold mb-2">Management's Role</h3>
-              <p className="text-gray-700 text-sm">
-                The sustainability team, reporting to the CEO, is responsible for day-to-day management of 
-                climate-related issues and implementation of reduction strategies.
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Emissions Inventory - Core section */}
-      {requiredSections.includes('emissions') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Emissions Inventory</h2>
-          
-          {/* Emissions Table */}
-          <div className="mb-6">
-            <table className="min-w-full border">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="py-3 px-4 text-left border">Scope</th>
-                  <th className="py-3 px-4 text-right border">Emissions (tCO2e)</th>
-                  <th className="py-3 px-4 text-right border">% of Total</th>
-                  <th className="py-3 px-4 text-right border">Change from Base Year</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="py-3 px-4 border">
-                    <strong>Scope 1</strong> - Direct Emissions
-                    <div className="text-xs text-gray-600">Fuel combustion, Process emissions, Fugitive emissions</div>
-                  </td>
-                  <td className="py-3 px-4 text-right border">{reportData.emissions.scope1.toFixed(2)}</td>
-                  <td className="py-3 px-4 text-right border">
-                    {reportData.emissions.total > 0 ? 
-                      ((reportData.emissions.scope1 / reportData.emissions.total) * 100).toFixed(1) : '0.0'}%
-                  </td>
-                  <td className="py-3 px-4 text-right border text-green-600">-5.2%</td>
-                </tr>
-                <tr className="bg-gray-50">
-                  <td className="py-3 px-4 border">
-                    <strong>Scope 2</strong> - Indirect Emissions
-                    <div className="text-xs text-gray-600">Purchased electricity, Steam, Heating & cooling</div>
-                  </td>
-                  <td className="py-3 px-4 text-right border">{reportData.emissions.scope2.toFixed(2)}</td>
-                  <td className="py-3 px-4 text-right border">
-                    {reportData.emissions.total > 0 ? 
-                      ((reportData.emissions.scope2 / reportData.emissions.total) * 100).toFixed(1) : '0.0'}%
-                  </td>
-                  <td className="py-3 px-4 text-right border text-green-600">-12.3%</td>
-                </tr>
-                <tr>
-                  <td className="py-3 px-4 border">
-                    <strong>Scope 3</strong> - Value Chain Emissions
-                    <div className="text-xs text-gray-600">
-                      Categories: Purchased goods, Transport, Waste, Business travel, Employee commuting
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-right border">{reportData.emissions.scope3.toFixed(2)}</td>
-                  <td className="py-3 px-4 text-right border">
-                    {reportData.emissions.total > 0 ? 
-                      ((reportData.emissions.scope3 / reportData.emissions.total) * 100).toFixed(1) : '0.0'}%
-                  </td>
-                  <td className="py-3 px-4 text-right border text-red-600">+2.1%</td>
-                </tr>
-                <tr className="font-bold bg-green-50">
-                  <td className="py-3 px-4 border">Total GHG Emissions</td>
-                  <td className="py-3 px-4 text-right border">{reportData.emissions.total.toFixed(2)}</td>
-                  <td className="py-3 px-4 text-right border">100.0%</td>
-                  <td className="py-3 px-4 text-right border text-green-600">-7.8%</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Emissions Charts */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-semibold mb-2">Emissions by Scope</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={[
-                      { name: 'Scope 1', value: reportData.emissions.scope1 },
-                      { name: 'Scope 2', value: reportData.emissions.scope2 },
-                      { name: 'Scope 3', value: reportData.emissions.scope3 }
-                    ].filter(item => item.value > 0)}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {[0, 1, 2].map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => value.toFixed(2) + ' tCO2e'} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            
-            <div>
-              <h3 className="font-semibold mb-2">Emissions Trend</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart
-                  data={[
-                    { year: 2023, emissions: reportData.emissions.total * 1.08 },
-                    { year: 2024, emissions: reportData.emissions.total * 1.02 },
-                    { year: 2025, emissions: reportData.emissions.total }
-                  ]}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="year" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => value.toFixed(2) + ' tCO2e'} />
-                  <Line type="monotone" dataKey="emissions" stroke="#2ecc71" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Facility-level Data - NGER specific */}
-      {requiredSections.includes('facility') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Facility-level Reporting</h2>
-          <table className="min-w-full border text-sm">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="py-2 px-3 text-left border">Facility</th>
-                <th className="py-2 px-3 text-right border">Scope 1</th>
-                <th className="py-2 px-3 text-right border">Scope 2</th>
-                <th className="py-2 px-3 text-right border">Total</th>
-                <th className="py-2 px-3 text-right border">Energy (TJ)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="py-2 px-3 border">Main Manufacturing Plant</td>
-                <td className="py-2 px-3 text-right border">45,000</td>
-                <td className="py-2 px-3 text-right border">32,000</td>
-                <td className="py-2 px-3 text-right border">77,000</td>
-                <td className="py-2 px-3 text-right border">145</td>
-              </tr>
-              <tr className="bg-gray-50">
-                <td className="py-2 px-3 border">Distribution Center</td>
-                <td className="py-2 px-3 text-right border">12,000</td>
-                <td className="py-2 px-3 text-right border">8,000</td>
-                <td className="py-2 px-3 text-right border">20,000</td>
-                <td className="py-2 px-3 text-right border">38</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 border">Head Office</td>
-                <td className="py-2 px-3 text-right border">500</td>
-                <td className="py-2 px-3 text-right border">2,500</td>
-                <td className="py-2 px-3 text-right border">3,000</td>
-                <td className="py-2 px-3 text-right border">12</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      {/* Methodology - Required for most standards */}
-      {requiredSections.includes('methodology') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Methodology & Boundaries</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="font-semibold mb-2">Organizational Boundaries</h3>
-              <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                <li>Consolidation approach: {reportData.consolidationApproach || 'Operational control'}</li>
-                <li>Entities included: All wholly-owned subsidiaries</li>
-                <li>Geographic coverage: {reportData.country}</li>
-                <li>Exclusions: Joint ventures (not under operational control)</li>
-              </ul>
-            </div>
-            
-            <div>
-              <h3 className="font-semibold mb-2">Calculation Methods</h3>
-              <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                <li>Standard: GHG Protocol Corporate Standard</li>
-                <li>Emission factors: {reportData.emissionFactorSource || 'Government published factors'}</li>
-                <li>GWP values: IPCC Sixth Assessment Report</li>
-                <li>Gases included: CO2, CH4, N2O, HFCs, PFCs, SF6, NF3</li>
-              </ul>
-            </div>
-          </div>
-          
-          <div className="mt-4">
-            <h3 className="font-semibold mb-2">Base Year</h3>
-            <p className="text-sm text-gray-700">
-              Base year: {reportData.baselineYear || new Date().getFullYear() - 1} | 
-              Total base year emissions: {(reportData.emissions.total * 1.08).toFixed(2)} tCO2e | 
-              Recalculation policy: Recalculate for structural changes >5% of total emissions
-            </p>
-          </div>
-        </section>
-      )}
-
-      {/* Data Quality - Required for assurance */}
-      {requiredSections.includes('data') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Data Quality & Uncertainty</h2>
-          
-          <table className="min-w-full border text-sm">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="py-2 px-3 text-left border">Emission Source</th>
-                <th className="py-2 px-3 text-left border">Data Source</th>
-                <th className="py-2 px-3 text-center border">Quality Rating</th>
-                <th className="py-2 px-3 text-center border">Uncertainty</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="py-2 px-3 border">Natural Gas</td>
-                <td className="py-2 px-3 border">Utility invoices</td>
-                <td className="py-2 px-3 text-center border">
-                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded">High</span>
-                </td>
-                <td className="py-2 px-3 text-center border">±2%</td>
-              </tr>
-              <tr className="bg-gray-50">
-                <td className="py-2 px-3 border">Electricity</td>
-                <td className="py-2 px-3 border">Smart meter data</td>
-                <td className="py-2 px-3 text-center border">
-                  <span className="px-2 py-1 bg-green-100 text-green-800 rounded">High</span>
-                </td>
-                <td className="py-2 px-3 text-center border">±1%</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 border">Fleet Vehicles</td>
-                <td className="py-2 px-3 border">Fuel card records</td>
-                <td className="py-2 px-3 text-center border">
-                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">Medium</span>
-                </td>
-                <td className="py-2 px-3 text-center border">±5%</td>
-              </tr>
-              <tr className="bg-gray-50">
-                <td className="py-2 px-3 border">Business Travel</td>
-                <td className="py-2 px-3 border">Expense reports + estimates</td>
-                <td className="py-2 px-3 text-center border">
-                  <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded">Low</span>
-                </td>
-                <td className="py-2 px-3 text-center border">±15%</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      {/* Reduction Strategies */}
-      {requiredSections.includes('reduction') && reportData.strategies && reportData.strategies.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Emission Reduction Strategies</h2>
-          
-          <div className="mb-6">
-            <h3 className="font-semibold mb-2">Implementation Roadmap</h3>
-            <table className="min-w-full border text-sm">
-              <thead>
-                <tr className="bg-gray-50">
-                  <th className="py-2 px-3 text-left border">Strategy</th>
-                  <th className="py-2 px-3 text-left border">Scope</th>
-                  <th className="py-2 px-3 text-right border">Reduction (tCO2e)</th>
-                  <th className="py-2 px-3 text-right border">Investment</th>
-                  <th className="py-2 px-3 text-center border">Timeline</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reportData.strategies.slice(0, 5).map((strategy, index) => (
-                  <tr key={index} className={index % 2 === 1 ? 'bg-gray-50' : ''}>
-                    <td className="py-2 px-3 border">{strategy.strategy || strategy.name}</td>
-                    <td className="py-2 px-3 border">{strategy.scope}</td>
-                    <td className="py-2 px-3 text-right border">
-                      {(strategy.potentialReduction || 0).toFixed(0)}
-                    </td>
-                    <td className="py-2 px-3 text-right border">
-                      ${(strategy.capex || 0).toLocaleString()}
-                    </td>
-                    <td className="py-2 px-3 text-center border">{strategy.timeframe || '2025-2026'}</td>
-                  </tr>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Category Breakdown */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold mb-4">Products by Category</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={analytics.categoryBreakdown}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              >
+                {analytics.categoryBreakdown.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
 
-      {/* Compliance Information */}
-      {requiredSections.includes('compliance') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Regulatory Compliance</h2>
-          
-          <div className="bg-blue-50 p-6 rounded-lg mb-4">
-            <h3 className="font-semibold mb-2">Compliance Status</h3>
-            <p className="text-gray-700">
-              Based on your organization's profile in {reportData.country}, you are classified under 
-              {reportData.regulatoryGroup > 0 ? 
-                ` Group ${reportData.regulatoryGroup} reporting requirements.` : 
-                ' voluntary reporting status.'}
+        {/* Top Products */}
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h3 className="text-lg font-semibold mb-4">Top Performing Products</h3>
+          <div className="space-y-3">
+            {analytics.topProducts.map((product, index) => (
+              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex-1">
+                  <p className="font-medium text-gray-800 truncate">{product.name}</p>
+                  <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                    <span className="flex items-center gap-1">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      {product.views} views
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                      </svg>
+                      {product.saves} saves
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      {product.inquiries} inquiries
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Performance Metrics */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-semibold mb-4">Performance Metrics</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-center">
+            <p className="text-sm text-gray-600 mb-2">Average Views per Product</p>
+            <p className="text-2xl font-bold text-gray-800">
+              {analytics.products.length > 0 ? Math.round(analytics.totalViews / analytics.products.length) : 0}
             </p>
-            
-            {reportData.regulatoryGroup > 0 && (
-              <div className="mt-3">
-                <p className="font-medium">Key Requirements:</p>
-                <ul className="list-disc list-inside mt-1 text-sm">
-                  <li>Annual emissions reporting to regulatory authority</li>
-                  <li>Third-party verification required</li>
-                  <li>Public disclosure of emissions data</li>
-                  <li>Climate risk assessment and disclosure</li>
-                </ul>
-              </div>
-            )}
           </div>
-          
-          <div>
-            <h3 className="font-semibold mb-2">Applicable Standards & Regulations</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {reportData.country === 'Australia' && (
-                <div className="border rounded p-3">
-                  <h4 className="font-medium">NGER Act</h4>
-                  <p className="text-sm text-gray-600">National Greenhouse and Energy Reporting</p>
-                </div>
-              )}
-              {reportData.country === 'United States' && (
-                <div className="border rounded p-3">
-                  <h4 className="font-medium">EPA GHGRP</h4>
-                  <p className="text-sm text-gray-600">EPA Greenhouse Gas Reporting Program</p>
-                </div>
-              )}
-              {(reportData.country === 'European Union' || reportData.country?.startsWith('EU')) && (
-                <div className="border rounded p-3">
-                  <h4 className="font-medium">EU CSRD</h4>
-                  <p className="text-sm text-gray-600">Corporate Sustainability Reporting Directive</p>
-                </div>
-              )}
-              <div className="border rounded p-3">
-                <h4 className="font-medium">GHG Protocol</h4>
-                <p className="text-sm text-gray-600">International best practice standard</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Assurance Statement */}
-      {requiredSections.includes('assurance') && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-green-700">Assurance & Verification</h2>
-          
-          <div className="border rounded-lg p-6 bg-gray-50">
-            <h3 className="font-semibold mb-2">Verification Status</h3>
-            <p className="text-gray-700 mb-3">
-              {reportData.verificationStatus || 'This report has been prepared in accordance with applicable standards but has not yet been independently verified.'}
+          <div className="text-center">
+            <p className="text-sm text-gray-600 mb-2">Save Rate</p>
+            <p className="text-2xl font-bold text-gray-800">
+              {analytics.totalViews > 0 ? ((analytics.totalSaves / analytics.totalViews) * 100).toFixed(1) : 0}%
             </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="font-medium">Prepared by:</p>
-                <p>{reportData.reportPreparer || 'Sustainability Team'}</p>
-                <p>{reportData.preparerTitle || 'Carbon Management'}</p>
-              </div>
-              <div>
-                <p className="font-medium">Reviewed by:</p>
-                <p>Senior Management</p>
-                <p>Date: {reportData.formattedDate}</p>
-              </div>
-            </div>
           </div>
-        </section>
-      )}
+          <div className="text-center">
+            <p className="text-sm text-gray-600 mb-2">Inquiry Rate</p>
+            <p className="text-2xl font-bold text-gray-800">
+              {analytics.totalViews > 0 ? ((analytics.totalInquiries / analytics.totalViews) * 100).toFixed(1) : 0}%
+            </p>
+          </div>
+        </div>
+      </div>
 
-      {/* Report Footer */}
-      <div className="border-t pt-6 mt-8">
-        <p className="text-sm text-gray-600 text-center">
-          This report has been prepared in accordance with the GHG Protocol Corporate Accounting and Reporting Standard
-          and applicable regulatory requirements for {reportData.country}.
-        </p>
-        <p className="text-xs text-gray-500 text-center mt-2">
-          © {new Date().getFullYear()} {reportData.companyName} - Confidential
-        </p>
+      {/* Tips for Better Performance */}
+      <div className="bg-blue-50 rounded-lg p-6">
+        <h3 className="text-lg font-semibold mb-3 text-blue-800">Tips to Improve Your Performance</h3>
+        <ul className="space-y-2 text-blue-700">
+          <li className="flex items-start gap-2">
+            <svg className="h-5 w-5 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Add high-quality images and detailed descriptions to your products</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <svg className="h-5 w-5 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Include specific emissions reduction percentages and certifications</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <svg className="h-5 w-5 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Respond to inquiries within 24 hours for better engagement</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <svg className="h-5 w-5 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Regularly update your products with new features and case studies</span>
+          </li>
+        </ul>
       </div>
     </div>
   );
 };
 
-export default ComplianceReportTemplate;
+export default ProviderAnalyticsDashboard;

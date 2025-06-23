@@ -253,7 +253,34 @@ const App = () => {
               <Route path="/projects" element={<ProjectsListingPage />} />
               <Route path="/projects/:id" element={<ProjectDetailPage />} />
               
-              {/* Profile routes */}
+              {/* IMPORTANT: Profile Edit routes MUST come before general profile routes */}
+              {/* Profile Edit Route - More specific route first */}
+              <Route 
+                path="/profile/edit/:id" 
+                element={
+                  <ProtectedRoute>
+                    <ProfileEditPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/profile/:id/edit" 
+                element={
+                  <ProtectedRoute>
+                    <ProfileEditPage />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/profiles/:id/edit" 
+                element={
+                  <ProtectedRoute>
+                    <ProfileEditPage />
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* Profile view routes - General routes after specific ones */}
               <Route 
                 path="/profile/:id" 
                 element={
@@ -269,16 +296,6 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <ProfilePage />
-                  </ProtectedRoute>
-                } 
-              />
-              
-              {/* Profile Edit Route */}
-              <Route 
-                path="/profile/:id/edit" 
-                element={
-                  <ProtectedRoute>
-                    <ProfileEditPage />
                   </ProtectedRoute>
                 } 
               />
