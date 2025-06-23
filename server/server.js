@@ -15,6 +15,7 @@ const carbonFootprintRoutes = require('./routes/carbonFootprintRoutes');
 const uploadsRouter = require('./routes/uploads');
 const article6ProjectsRoutes = require('./routes/article6ProjectsRoutes');
 const serviceProviderRoutes = require('./routes/serviceProviderRoutes');
+const analyticsRoutes = require('./routes/analytics');
 
 // Try to import creditSystemRoutes with error handling
 let creditSystemRoutes;
@@ -53,6 +54,7 @@ app.use(cors({
       'https://www.carbonprospect.com',
       'http://localhost:3000',
       'http://localhost:3001',
+      'http://localhost:3002',
       'http://127.0.0.1:3000',
       'http://127.0.0.1:3001'
     ];
@@ -80,12 +82,6 @@ app.use(cors({
   exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
 
-// Serve static files from the uploads directory
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Also serve from public/uploads as a fallback
-app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public/uploads')));
-
 // Request logging middleware
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
@@ -110,6 +106,7 @@ app.use('/api/carbon-footprints', carbonFootprintRoutes);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/article6-projects', article6ProjectsRoutes);
 app.use('/api/service-providers', serviceProviderRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Only add credit system routes if they were loaded successfully
 if (creditSystemRoutes) {
@@ -152,6 +149,18 @@ app.get('/api/debug/routes', (req, res) => {
   });
 });
 
+// Add a specific 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  console.warn(`API 404 Not Found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ message: 'API endpoint not found', path: req.originalUrl });
+});
+
+// Serve static files from the uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Also serve from public/uploads as a fallback
+app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'public/uploads')));
+
 // Add a route to specifically serve project images with fallback to placeholder
 app.get('/uploads/images/:filename', (req, res) => {
   const filename = req.params.filename;
@@ -184,12 +193,7 @@ app.get('*', (req, res) => {
   res.sendFile(buildIndex);
 });
 
-// Error handling middleware
-app.use((req, res, next) => {
-  console.warn(`404 Not Found: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ message: 'Route not found', path: req.originalUrl });
-});
-
+// General error handling middleware (for actual errors, not 404s)
 app.use((err, req, res, next) => {
   console.error(`Error: ${err.message}`);
   console.error(err.stack);
@@ -286,6 +290,24 @@ pool.query(`
   }
 });
 
+// Check if analytics tables exist
+pool.query(`
+  SELECT table_name 
+  FROM information_schema.tables 
+  WHERE table_schema = 'public' 
+  AND table_name IN ('product_views', 'project_views')
+  ORDER BY table_name
+`, (err, result) => {
+  if (err) {
+    console.error('❌ Analytics table check failed:', err);
+  } else {
+    console.log(`✅ Found ${result.rows.length} analytics tables`);
+    result.rows.forEach(row => {
+      console.log(`   - ${row.table_name}`);
+    });
+  }
+});
+
 // Also check what tables exist
 pool.query(`
   SELECT table_name, table_schema 
@@ -325,6 +347,7 @@ app.listen(PORT, () => {
   console.log('\nTest the API:');
   console.log(`  curl http://localhost:${PORT}/api/marketplace/products`);
   console.log(`  curl http://localhost:${PORT}/api/debug/routes`);
+  console.log(`  curl http://localhost:${PORT}/api/analytics/my-products`);
   if (creditSystemRoutes) {
     console.log(`  curl http://localhost:${PORT}/api/credit-types`);
     console.log(`  curl http://localhost:${PORT}/api/target-markets`);

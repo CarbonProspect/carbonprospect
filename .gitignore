@@ -1,30 +1,14 @@
-# Environment variables
+node_modules/
 .env
 .env.local
-.env.save
-
-# Dependencies
-node_modules/
-
-# Logs
 *.log
-npm-debug.log*
-
-# Runtime data
-pids/
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# Mac system files
 .DS_Store
-
-# Build outputs
-dist/
+carbon_marketplace_backup.sql
+carbon_marketplace_backup.dump
 build/
-
-# Uploads folder (if contains user uploads)
-uploads/
+dist/
+*.pem
+.idea/
+.vscode/
+package-lock.json
+yarn.lock

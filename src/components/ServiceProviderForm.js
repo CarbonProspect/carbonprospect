@@ -1,4 +1,4 @@
-// src/components/ServiceProviderForm.js - Updated with multiple category selection
+// src/components/ServiceProviderForm.js - Updated to save to service_providers table
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -8,24 +8,24 @@ const ServiceProviderForm = () => {
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [formData, setFormData] = useState({
-    provider_types: [], // Changed from provider_type to provider_types (array)
+    provider_types: [], // Array of selected provider type objects
     company_name: '',
     description: '',
     specializations: [],
     certifications: [],
     regions_served: [],
     industries_served: [],
-    pricing_model: '',
+    pricing_model: 'hourly',
     hourly_rate_min: '',
     hourly_rate_max: '',
     project_minimum: '',
     years_experience: '',
-    team_size: '',
-    languages: [],
+    team_size: 'small',
+    languages: ['English'],
     website: '',
     linkedin_url: '',
-    availability: 'scheduled',
-    response_time: '24-48 hours',
+    availability: 'immediate',
+    response_time: 'within_24_hours',
     image_url: ''
   });
 
@@ -105,10 +105,27 @@ const ServiceProviderForm = () => {
     setLoading(true);
 
     try {
-      // Prepare data with provider_types as an array of IDs
+      // Prepare data for service_providers table
       const submitData = {
-        ...formData,
-        provider_types: formData.provider_types.map(t => t.id) // Send only the IDs
+        provider_types: formData.provider_types.map(t => t.id), // Send only the IDs
+        company_name: formData.company_name,
+        description: formData.description,
+        specializations: formData.specializations,
+        certifications: formData.certifications,
+        regions_served: formData.regions_served,
+        industries_served: formData.industries_served,
+        pricing_model: formData.pricing_model,
+        hourly_rate_min: formData.hourly_rate_min ? parseFloat(formData.hourly_rate_min) : null,
+        hourly_rate_max: formData.hourly_rate_max ? parseFloat(formData.hourly_rate_max) : null,
+        project_minimum: formData.project_minimum ? parseFloat(formData.project_minimum) : null,
+        years_experience: formData.years_experience ? parseInt(formData.years_experience) : null,
+        team_size: formData.team_size,
+        languages: formData.languages,
+        website: formData.website,
+        linkedin_url: formData.linkedin_url,
+        availability: formData.availability,
+        response_time: formData.response_time,
+        image_url: formData.image_url || null
       };
 
       const response = await axios.post('/api/service-providers', submitData, {
@@ -118,7 +135,13 @@ const ServiceProviderForm = () => {
       });
 
       alert('Service provider profile created successfully!');
-      navigate('/marketplace?tab=providers');
+      
+      // Navigate to the new service provider profile
+      if (response.data.provider && response.data.provider.id) {
+        navigate(`/service-providers/${response.data.provider.id}`);
+      } else {
+        navigate('/marketplace?tab=providers');
+      }
     } catch (error) {
       console.error('Error creating profile:', error);
       alert(error.response?.data?.message || 'Failed to create profile');
@@ -144,6 +167,14 @@ const ServiceProviderForm = () => {
     'Portuguese', 'Arabic', 'Hindi', 'Russian', 'Italian', 'Korean'
   ];
 
+  const teamSizes = [
+    { value: 'individual', label: 'Individual' },
+    { value: 'small', label: '2-10 people' },
+    { value: 'medium', label: '11-50 people' },
+    { value: 'large', label: '51-200 people' },
+    { value: 'enterprise', label: '200+ people' }
+  ];
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-8">Register as a Service Provider</h1>
@@ -155,7 +186,7 @@ const ServiceProviderForm = () => {
           
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Provider Types * (Select all that apply)</label>
+              <label className="block text-sm font-medium mb-2">Service Categories * (Select all that apply)</label>
               <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
                 {categories.map(cat => (
                   <div key={cat.id} className="mb-4">
@@ -190,7 +221,7 @@ const ServiceProviderForm = () => {
               </div>
               {formData.provider_types.length > 0 && (
                 <div className="mt-3">
-                  <p className="text-sm text-gray-600 mb-2">Selected: {formData.provider_types.length} type(s)</p>
+                  <p className="text-sm text-gray-600 mb-2">Selected: {formData.provider_types.length} category(ies)</p>
                   <div className="flex flex-wrap gap-2">
                     {formData.provider_types.map((type, index) => (
                       <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
@@ -327,13 +358,9 @@ const ServiceProviderForm = () => {
                   onChange={handleInputChange}
                   className="w-full p-2 border rounded-md"
                 >
-                  <option value="">Select team size</option>
-                  <option value="1">Individual</option>
-                  <option value="2-5">2-5 people</option>
-                  <option value="6-10">6-10 people</option>
-                  <option value="11-25">11-25 people</option>
-                  <option value="26-50">26-50 people</option>
-                  <option value="50+">50+ people</option>
+                  {teamSizes.map(size => (
+                    <option key={size.value} value={size.value}>{size.label}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -431,7 +458,7 @@ const ServiceProviderForm = () => {
                   className="flex-1 p-2 border rounded-md"
                 >
                   <option value="">Select a language</option>
-                  {languages.map(language => (
+                  {languages.filter(lang => !formData.languages.includes(lang)).map(language => (
                     <option key={language} value={language}>{language}</option>
                   ))}
                 </select>
@@ -447,13 +474,15 @@ const ServiceProviderForm = () => {
                 {formData.languages.map((language, index) => (
                   <span key={index} className="px-3 py-1 bg-yellow-100 rounded-full flex items-center gap-2">
                     {language}
-                    <button
-                      type="button"
-                      onClick={() => removeArrayItem('languages', index)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      ×
-                    </button>
+                    {language !== 'English' && ( // Don't allow removing English
+                      <button
+                        type="button"
+                        onClick={() => removeArrayItem('languages', index)}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        ×
+                      </button>
+                    )}
                   </span>
                 ))}
               </div>
@@ -474,17 +503,16 @@ const ServiceProviderForm = () => {
                 onChange={handleInputChange}
                 className="w-full p-2 border rounded-md"
               >
-                <option value="">Select pricing model</option>
                 <option value="hourly">Hourly Rate</option>
-                <option value="project">Project-Based</option>
+                <option value="project_based">Project-Based</option>
                 <option value="retainer">Monthly Retainer</option>
-                <option value="commission">Commission-Based</option>
+                <option value="performance_based">Performance-Based</option>
+                <option value="equity">Equity-Based</option>
                 <option value="hybrid">Hybrid</option>
-                <option value="negotiable">Negotiable</option>
               </select>
             </div>
 
-            {formData.pricing_model === 'hourly' && (
+            {(formData.pricing_model === 'hourly' || formData.pricing_model === 'hybrid') && (
               <>
                 <div>
                   <label className="block text-sm font-medium mb-2">Hourly Rate (Min)</label>
@@ -515,7 +543,7 @@ const ServiceProviderForm = () => {
               </>
             )}
 
-            {(formData.pricing_model === 'project' || formData.pricing_model === 'hybrid') && (
+            {(formData.pricing_model === 'project_based' || formData.pricing_model === 'hybrid') && (
               <div>
                 <label className="block text-sm font-medium mb-2">Minimum Project Size</label>
                 <input
@@ -543,7 +571,7 @@ const ServiceProviderForm = () => {
                 <option value="within_week">Within a week</option>
                 <option value="within_month">Within a month</option>
                 <option value="scheduled">Scheduled/By appointment</option>
-                <option value="unavailable">Currently unavailable</option>
+                <option value="limited">Limited availability</option>
               </select>
             </div>
 
@@ -555,12 +583,12 @@ const ServiceProviderForm = () => {
                 onChange={handleInputChange}
                 className="w-full p-2 border rounded-md"
               >
-                <option value="1-2 hours">1-2 hours</option>
-                <option value="2-4 hours">2-4 hours</option>
-                <option value="4-8 hours">4-8 hours</option>
-                <option value="24 hours">24 hours</option>
-                <option value="24-48 hours">24-48 hours</option>
-                <option value="2-3 days">2-3 days</option>
+                <option value="within_hour">Within an hour</option>
+                <option value="within_4_hours">Within 4 hours</option>
+                <option value="within_8_hours">Within 8 hours</option>
+                <option value="within_24_hours">Within 24 hours</option>
+                <option value="within_48_hours">Within 48 hours</option>
+                <option value="within_week">Within a week</option>
               </select>
             </div>
           </div>
@@ -605,6 +633,9 @@ const ServiceProviderForm = () => {
                 placeholder="https://example.com/image.jpg"
                 className="w-full p-2 border rounded-md"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Provide a URL to your company logo or profile image
+              </p>
             </div>
           </div>
         </div>
@@ -620,8 +651,8 @@ const ServiceProviderForm = () => {
           </button>
           <button
             type="submit"
-            disabled={loading || formData.provider_types.length === 0}
-            className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+            disabled={loading || formData.provider_types.length === 0 || !formData.company_name || !formData.description}
+            className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Creating...' : 'Create Profile'}
           </button>

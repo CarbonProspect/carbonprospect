@@ -1,4 +1,4 @@
-// routes/serviceProviderRoutes.js - Updated to handle multiple provider types
+// routes/serviceProviderRoutes.js - Fixed to use correct column names
 const express = require('express');
 const router = express.Router();
 const pool = require('../db/pool');
@@ -175,11 +175,12 @@ router.get('/', async (req, res) => {
   try {
     const { provider_type, region, industry, pricing_model } = req.query;
     
+    // Fixed query - using first_name and last_name instead of full_name
     let query = `
       SELECT 
         sp.*,
         u.email,
-        u.full_name,
+        CONCAT(u.first_name, ' ', u.last_name) as full_name,
         pc.category_name as primary_provider_category_name,
         -- Get all provider types
         COALESCE(
@@ -205,36 +206,43 @@ router.get('/', async (req, res) => {
     const params = [];
     let paramCount = 1;
 
+    // Handle multiple provider types
     if (provider_type) {
-      // Search in both primary type and additional types
-      query += ` AND (sp.provider_type = $${paramCount} OR EXISTS (
-        SELECT 1 FROM user_provider_types upt2 
-        WHERE upt2.service_provider_id = sp.id 
-        AND upt2.provider_type = $${paramCount}
-      ))`;
-      params.push(provider_type);
-      paramCount++;
+      const providerTypes = Array.isArray(provider_type) ? provider_type : [provider_type];
+      
+      if (providerTypes.length > 0) {
+        const placeholders = providerTypes.map((_, index) => `${paramCount + index}`).join(',');
+        
+        query += ` AND (sp.provider_type IN (${placeholders}) OR EXISTS (
+          SELECT 1 FROM user_provider_types upt2 
+          WHERE upt2.service_provider_id = sp.id 
+          AND upt2.provider_type IN (${placeholders})
+        ))`;
+        
+        providerTypes.forEach(type => params.push(type));
+        paramCount += providerTypes.length;
+      }
     }
 
     if (region) {
-      query += ` AND sp.regions_served @> $${paramCount}`;
+      query += ` AND sp.regions_served @> ${paramCount}`;
       params.push(JSON.stringify([region]));
       paramCount++;
     }
 
     if (industry) {
-      query += ` AND sp.industries_served @> $${paramCount}`;
+      query += ` AND sp.industries_served @> ${paramCount}`;
       params.push(JSON.stringify([industry]));
       paramCount++;
     }
 
     if (pricing_model) {
-      query += ` AND sp.pricing_model = $${paramCount}`;
+      query += ` AND sp.pricing_model = ${paramCount}`;
       params.push(pricing_model);
       paramCount++;
     }
 
-    query += ' GROUP BY sp.id, u.email, u.full_name, pc.category_name ORDER BY sp.created_at DESC';
+    query += ' GROUP BY sp.id, u.email, u.first_name, u.last_name, pc.category_name ORDER BY sp.created_at DESC';
     
     const result = await pool.query(query, params);
     res.json(result.rows);
@@ -249,11 +257,12 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Fixed query - using first_name and last_name instead of full_name
     const query = `
       SELECT 
         sp.*,
         u.email,
-        u.full_name,
+        CONCAT(u.first_name, ' ', u.last_name) as full_name,
         pc.category_name as primary_provider_category_name,
         -- Get all provider types
         COALESCE(
@@ -274,7 +283,7 @@ router.get('/:id', async (req, res) => {
       LEFT JOIN provider_categories pc2 ON upt.provider_type::integer = pc2.id
       LEFT JOIN provider_categories parent_pc ON pc2.parent_category_id = parent_pc.id
       WHERE sp.id = $1
-      GROUP BY sp.id, u.email, u.full_name, pc.category_name
+      GROUP BY sp.id, u.email, u.first_name, u.last_name, pc.category_name
     `;
     
     const result = await pool.query(query, [id]);

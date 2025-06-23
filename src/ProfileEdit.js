@@ -42,7 +42,16 @@ const ProfileEdit = () => {
     // Provider-specific fields
     company_size: '',
     services: [],
+    specializations: [],
     certifications: [],
+    team_size: '',
+    years_experience: null,
+    pricing_model: '',
+    hourly_rate_min: null,
+    hourly_rate_max: null,
+    project_minimum: null,
+    availability: '',
+    languages: [],
     social_profiles: {
       linkedin: '',
       twitter: '',
@@ -239,7 +248,16 @@ const ProfileEdit = () => {
           // Provider-specific fields
           company_size: profileData.company_size || '',
           services: profileData.services || [],
+          specializations: profileData.specializations || [],
           certifications: profileData.certifications || [],
+          team_size: profileData.team_size || '',
+          years_experience: profileData.years_experience || null,
+          pricing_model: profileData.pricing_model || '',
+          hourly_rate_min: profileData.hourly_rate_min || null,
+          hourly_rate_max: profileData.hourly_rate_max || null,
+          project_minimum: profileData.project_minimum || null,
+          availability: profileData.availability || '',
+          languages: profileData.languages || [],
           social_profiles: profileData.social_profiles || {
             linkedin: '',
             twitter: '',
@@ -293,8 +311,10 @@ const ProfileEdit = () => {
         ...prev,
         [name]: checked
       }));
-    } else if (name === 'founded_year') {
-      // Special handling for founded_year to ensure it's null when empty
+    } else if (name === 'founded_year' || name === 'years_experience' || 
+               name === 'hourly_rate_min' || name === 'hourly_rate_max' || 
+               name === 'project_minimum') {
+      // Special handling for numeric fields to ensure they're null when empty
       setFormData(prev => ({
         ...prev,
         [name]: value === '' ? null : Number(value)
@@ -358,7 +378,6 @@ const ProfileEdit = () => {
       }
     }));
   };
-  
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -500,7 +519,17 @@ const ProfileEdit = () => {
           founded_year: dataToSend.founded_year,
           industry: dataToSend.industry || '',
           regions: dataToSend.regions || [],
+          services: dataToSend.services || [],
+          specializations: dataToSend.specializations || [],
           certifications: dataToSend.certifications || [],
+          team_size: dataToSend.team_size || '',
+          years_experience: dataToSend.years_experience,
+          pricing_model: dataToSend.pricing_model || '',
+          hourly_rate_min: dataToSend.hourly_rate_min,
+          hourly_rate_max: dataToSend.hourly_rate_max,
+          project_minimum: dataToSend.project_minimum,
+          availability: dataToSend.availability || '',
+          languages: dataToSend.languages || [],
           social_profiles: dataToSend.social_profiles || {},
           contact_info: dataToSend.contact_info || {},
           visibility_settings: fullVisibilitySettings
@@ -512,6 +541,18 @@ const ProfileEdit = () => {
       // Special handling for numeric fields - ensure null instead of empty strings
       if (dataToSend.founded_year === '') {
         dataToSend.founded_year = null;
+      }
+      if (dataToSend.years_experience === '') {
+        dataToSend.years_experience = null;
+      }
+      if (dataToSend.hourly_rate_min === '') {
+        dataToSend.hourly_rate_min = null;
+      }
+      if (dataToSend.hourly_rate_max === '') {
+        dataToSend.hourly_rate_max = null;
+      }
+      if (dataToSend.project_minimum === '') {
+        dataToSend.project_minimum = null;
       }
       
       console.log(`Submitting to endpoint: ${endpoint}`);
@@ -915,6 +956,184 @@ const ProfileEdit = () => {
             </div>
           </div>
           
+          {/* Provider-specific fields */}
+          {profileType === 'provider' && (
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Service Provider Details</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="services" className="block text-sm font-medium text-gray-700 mb-1">
+                    Services Offered
+                  </label>
+                  <textarea
+                    id="services"
+                    name="services"
+                    value={Array.isArray(formData.services) ? formData.services.join('\n') : ''}
+                    onChange={(e) => {
+                      const servicesArray = e.target.value.split('\n').filter(s => s.trim());
+                      setFormData(prev => ({
+                        ...prev,
+                        services: servicesArray
+                      }));
+                    }}
+                    rows="4"
+                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="Enter each service on a new line..."
+                  />
+                  <p className="text-xs text-gray-500 mt-1">One service per line</p>
+                </div>
+                
+                <div>
+                  <label htmlFor="specializations" className="block text-sm font-medium text-gray-700 mb-1">
+                    Specializations
+                  </label>
+                  <textarea
+                    id="specializations"
+                    name="specializations"
+                    value={Array.isArray(formData.specializations) ? formData.specializations.join('\n') : ''}
+                    onChange={(e) => {
+                      const specializationsArray = e.target.value.split('\n').filter(s => s.trim());
+                      setFormData(prev => ({
+                        ...prev,
+                        specializations: specializationsArray
+                      }));
+                    }}
+                    rows="4"
+                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="Enter each specialization on a new line..."
+                  />
+                  <p className="text-xs text-gray-500 mt-1">One specialization per line</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label htmlFor="team_size" className="block text-sm font-medium text-gray-700 mb-1">
+                    Team Size
+                  </label>
+                  <input
+                    type="text"
+                    id="team_size"
+                    name="team_size"
+                    value={formData.team_size || ''}
+                    onChange={handleChange}
+                    placeholder="e.g., 10-50"
+                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="years_experience" className="block text-sm font-medium text-gray-700 mb-1">
+                    Years of Experience
+                  </label>
+                  <input
+                    type="number"
+                    id="years_experience"
+                    name="years_experience"
+                    value={formData.years_experience || ''}
+                    onChange={handleChange}
+                    min="0"
+                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label htmlFor="pricing_model" className="block text-sm font-medium text-gray-700 mb-1">
+                    Pricing Model
+                  </label>
+                  <select
+                    id="pricing_model"
+                    name="pricing_model"
+                    value={formData.pricing_model || ''}
+                    onChange={handleChange}
+                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    <option value="">Select Pricing Model</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="project">Project-based</option>
+                    <option value="retainer">Retainer</option>
+                    <option value="subscription">Subscription</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label htmlFor="availability" className="block text-sm font-medium text-gray-700 mb-1">
+                    Availability
+                  </label>
+                  <select
+                    id="availability"
+                    name="availability"
+                    value={formData.availability || ''}
+                    onChange={handleChange}
+                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    <option value="">Select Availability</option>
+                    <option value="immediate">Immediate</option>
+                    <option value="within_week">Within a week</option>
+                    <option value="within_month">Within a month</option>
+                    <option value="unavailable">Currently unavailable</option>
+                  </select>
+                </div>
+              </div>
+              
+              {formData.pricing_model === 'hourly' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label htmlFor="hourly_rate_min" className="block text-sm font-medium text-gray-700 mb-1">
+                      Minimum Hourly Rate ($)
+                    </label>
+                    <input
+                      type="number"
+                      id="hourly_rate_min"
+                      name="hourly_rate_min"
+                      value={formData.hourly_rate_min || ''}
+                      onChange={handleChange}
+                      min="0"
+                      step="10"
+                      className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="hourly_rate_max" className="block text-sm font-medium text-gray-700 mb-1">
+                      Maximum Hourly Rate ($)
+                    </label>
+                    <input
+                      type="number"
+                      id="hourly_rate_max"
+                      name="hourly_rate_max"
+                      value={formData.hourly_rate_max || ''}
+                      onChange={handleChange}
+                      min="0"
+                      step="10"
+                      className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              <div className="mt-4">
+                <label htmlFor="project_minimum" className="block text-sm font-medium text-gray-700 mb-1">
+                  Minimum Project Size ($)
+                </label>
+                <input
+                  type="number"
+                  id="project_minimum"
+                  name="project_minimum"
+                  value={formData.project_minimum || ''}
+                  onChange={handleChange}
+                  min="0"
+                  step="1000"
+                  className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                />
+              </div>
+            </div>
+          )}
+          
           {/* Regions & Expertise Section */}
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Regions & Expertise</h2>
@@ -987,6 +1206,32 @@ const ProfileEdit = () => {
                   ))}
                 </div>
               </div>
+            )}
+            
+            {profileType === 'provider' && (
+              <>
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Languages Spoken
+                  </label>
+                  <textarea
+                    id="languages"
+                    name="languages"
+                    value={Array.isArray(formData.languages) ? formData.languages.join('\n') : ''}
+                    onChange={(e) => {
+                      const languagesArray = e.target.value.split('\n').filter(l => l.trim());
+                      setFormData(prev => ({
+                        ...prev,
+                        languages: languagesArray
+                      }));
+                    }}
+                    rows="3"
+                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    placeholder="Enter each language on a new line (e.g., English, Spanish, Mandarin)..."
+                  />
+                  <p className="text-xs text-gray-500 mt-1">One language per line</p>
+                </div>
+              </>
             )}
           </div>
           

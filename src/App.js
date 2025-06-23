@@ -24,7 +24,7 @@ import CarbonFootprintPage from './CarbonFootprintPage';
 import ProfilePage from './ProfilePage';
 import ProfileEditPage from './ProfileEdit';
 import Dashboard from './Dashboard';
-import SolutionDetailPage from './components/SolutionDetailPage';
+import ProductDetailPage from './components/ProductDetailPage';
 import ProductEditPage from './components/marketplace/ProductEditPage';
 import ReportsList from './ReportsList'; // Add this import
 
@@ -33,6 +33,9 @@ import ProjectsListingPage from './ProjectsListingPage';
 import ProjectDetailPage from './ProjectDetailPage';
 import ProjectListingForm from './ProjectListingForm';
 import ProjectEditPage from './ProjectEditPage';
+
+// Import service provider components
+import ServiceProviderProfile from './ServiceProviderProfile';
 
 // Placeholder for missing pages that can be implemented later
 const NotFoundPage = () => <div className="container mx-auto px-4 py-8"><h1>Page Not Found</h1></div>;
@@ -110,7 +113,7 @@ const App = () => {
                 }
               />
               
-              {/* Service Provider Registration Route */}
+              {/* Service Provider Routes */}
               <Route 
                 path="/service-provider/register" 
                 element={
@@ -120,8 +123,30 @@ const App = () => {
                 }
               />
               <Route 
+                path="/service-providers/new" 
+                element={
+                  <ProtectedRoute>
+                    <ServiceProviderForm />
+                  </ProtectedRoute>
+                }
+              />
+              <Route 
+                path="/service-providers/:id" 
+                element={<ServiceProviderProfile />}
+              />
+              <Route 
+                path="/service-providers/:id/edit" 
+                element={
+                  <ProtectedRoute>
+                    <ServiceProviderForm />
+                  </ProtectedRoute>
+                }
+              />
+              
+              {/* Product Detail Route */}
+              <Route 
                 path="/marketplace/solution/:id" 
-                element={<SolutionDetailPage />}
+                element={<ProductDetailPage />}
               />
               
               {/* Product Edit Route */}
@@ -172,7 +197,7 @@ const App = () => {
                 } 
               />
               
-              {/* Reports Route - Add this new route */}
+              {/* Reports Route */}
               <Route 
                 path="/reports" 
                 element={
@@ -250,7 +275,7 @@ const App = () => {
               
               {/* Profile Edit Route */}
               <Route 
-                path="/profile/edit/:id" 
+                path="/profile/:id/edit" 
                 element={
                   <ProtectedRoute>
                     <ProfileEditPage />
@@ -330,4 +355,3 @@ const App = () => {
 };
 
 export default App;
-// Trigger rebuild

@@ -370,7 +370,6 @@ router.get('/options', async (req, res) => {
     res.status(500).json({ message: 'Server error fetching options', error: err.message });
   }
 });
-
 /**
  * @route   GET /api/marketplace/assessment-projects/:projectId/products
  * @desc    Get products associated with a project
@@ -709,6 +708,156 @@ router.delete('/assessment-projects/:projectId/products/:productId', authenticat
   } catch (error) {
     console.error('Error removing product from project:', error);
     return res.status(500).json({ error: 'Failed to remove product from project', details: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/marketplace/saved
+ * @desc    Get all saved marketplace products for the current user
+ * @access  Private
+ */
+router.get('/saved', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // First, check if the saved_marketplace_products table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'saved_marketplace_products'
+      );
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      // Create the table if it doesn't exist
+      await pool.query(`
+        CREATE TABLE saved_marketplace_products (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          product_id VARCHAR(255) NOT NULL,
+          saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(user_id, product_id)
+        );
+      `);
+      
+      // Create indexes for better performance
+      await pool.query(`
+        CREATE INDEX idx_saved_marketplace_user ON saved_marketplace_products(user_id);
+        CREATE INDEX idx_saved_marketplace_product ON saved_marketplace_products(product_id);
+      `);
+    }
+    
+    // Fetch saved products with full product details
+    const result = await pool.query(`
+      SELECT 
+        mp.*,
+        smp.saved_at
+      FROM saved_marketplace_products smp
+      JOIN marketplace_products mp ON smp.product_id = mp.id
+      WHERE smp.user_id = $1
+      ORDER BY smp.saved_at DESC
+    `, [userId]);
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching saved products:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/marketplace/save/:productId
+ * @desc    Save a marketplace product to user's dashboard
+ * @access  Private
+ */
+router.post('/save/:productId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const productId = req.params.productId;
+    
+    // Check if product exists
+    const productCheck = await pool.query(
+      'SELECT id FROM marketplace_products WHERE id = $1',
+      [productId]
+    );
+    
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    
+    // Check if the saved_marketplace_products table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'saved_marketplace_products'
+      );
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      // Create the table if it doesn't exist
+      await pool.query(`
+        CREATE TABLE saved_marketplace_products (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          product_id VARCHAR(255) NOT NULL,
+          saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(user_id, product_id)
+        );
+      `);
+    }
+    
+    // Check if already saved
+    const existingCheck = await pool.query(
+      'SELECT id FROM saved_marketplace_products WHERE user_id = $1 AND product_id = $2',
+      [userId, productId]
+    );
+    
+    if (existingCheck.rows.length > 0) {
+      return res.status(400).json({ message: 'Product already saved' });
+    }
+    
+    // Save the product
+    const result = await pool.query(
+      'INSERT INTO saved_marketplace_products (user_id, product_id) VALUES ($1, $2) RETURNING *',
+      [userId, productId]
+    );
+    
+    res.status(201).json({ 
+      message: 'Product saved successfully', 
+      saved: result.rows[0] 
+    });
+  } catch (err) {
+    console.error('Error saving product:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+/**
+ * @route   DELETE /api/marketplace/save/:productId
+ * @desc    Remove a saved marketplace product from user's dashboard
+ * @access  Private
+ */
+router.delete('/save/:productId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const productId = req.params.productId;
+    
+    // Delete the saved product
+    const result = await pool.query(
+      'DELETE FROM saved_marketplace_products WHERE user_id = $1 AND product_id = $2 RETURNING *',
+      [userId, productId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Saved product not found' });
+    }
+    
+    res.json({ message: 'Product removed from saved items' });
+  } catch (err) {
+    console.error('Error removing saved product:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 

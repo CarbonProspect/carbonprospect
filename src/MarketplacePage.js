@@ -1,4 +1,4 @@
-// MarketplacePage.js - Fixed version that works in both development and production
+// MarketplacePage.js - Updated with multiple category selection
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthSystem';
@@ -7,9 +7,6 @@ import { useAuth } from './AuthSystem';
 const API_BASE = process.env.NODE_ENV === 'production' 
   ? '/api'  // In production, use relative path (same domain)
   : 'http://localhost:3001/api';  // In development, use localhost
-
-// Alternative: Use environment variable if you have one set up
-// const API_BASE = process.env.REACT_APP_API_URL || '/api';
 
 const MarketplacePage = () => {
   const [products, setProducts] = useState([]);
@@ -20,10 +17,17 @@ const MarketplacePage = () => {
   const [error, setError] = useState(null);
   const [selectedTab, setSelectedTab] = useState('products');
   
-  // New state for providers
+  // New state for service providers - UPDATED for multiple selection
   const [providers, setProviders] = useState([]);
-  const [providerTypes, setProviderTypes] = useState([]);
-  const [selectedProviderType, setSelectedProviderType] = useState('all');
+  const [providerCategories, setProviderCategories] = useState([]);
+  const [selectedProviderCategories, setSelectedProviderCategories] = useState([]); // Changed to array
+  
+  // Additional filter states for products
+  const [subcategories, setSubcategories] = useState([]);
+  const [selectedSubcategory, setSelectedSubcategory] = useState('all');
+  const [priceRange, setPriceRange] = useState({ min: '', max: '' });
+  const [emissionReductionMin, setEmissionReductionMin] = useState('');
+  const [selectedImplementationTime, setSelectedImplementationTime] = useState('all');
   
   const { currentUser } = useAuth();
   
@@ -33,26 +37,27 @@ const MarketplacePage = () => {
       loadProducts();
       loadCategories();
     } else {
-      loadProviders();
-      loadProviderTypes();
+      loadServiceProviders();
+      loadProviderCategories();
     }
-  }, [selectedTab, selectedCategory, searchTerm, selectedProviderType]);
+  }, [selectedTab, selectedCategory, selectedSubcategory, searchTerm, selectedProviderCategories, priceRange, emissionReductionMin, selectedImplementationTime]); // Updated dependency
   
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Build query parameters
       const params = new URLSearchParams();
       if (selectedCategory !== 'all') {
         params.append('category', selectedCategory);
+      }
+      if (selectedSubcategory !== 'all') {
+        params.append('subcategory', selectedSubcategory);
       }
       if (searchTerm) {
         params.append('search', searchTerm);
       }
       
-      // Use direct fetch to avoid proxy issues
       const url = `${API_BASE}/marketplace/products${params.toString() ? '?' + params.toString() : ''}`;
       const response = await fetch(url);
       
@@ -63,7 +68,44 @@ const MarketplacePage = () => {
       const data = await response.json();
       
       if (Array.isArray(data)) {
-        setProducts(data);
+        // Apply client-side filters for price and emission reduction
+        let filteredProducts = data;
+        
+        if (priceRange.min || priceRange.max) {
+          filteredProducts = filteredProducts.filter(product => {
+            const price = product.unit_price || 0;
+            const minPrice = priceRange.min ? parseFloat(priceRange.min) : 0;
+            const maxPrice = priceRange.max ? parseFloat(priceRange.max) : Infinity;
+            return price >= minPrice && price <= maxPrice;
+          });
+        }
+        
+        if (emissionReductionMin) {
+          filteredProducts = filteredProducts.filter(product => {
+            const reduction = product.emissions_reduction_factor || 0;
+            return reduction >= parseFloat(emissionReductionMin) / 100;
+          });
+        }
+        
+        if (selectedImplementationTime !== 'all') {
+          filteredProducts = filteredProducts.filter(product => {
+            const time = product.implementation_time || '';
+            switch (selectedImplementationTime) {
+              case 'immediate':
+                return time.toLowerCase().includes('immediate') || time.toLowerCase().includes('instant');
+              case 'short':
+                return time.includes('week') || time.includes('1-2 month');
+              case 'medium':
+                return time.includes('3-6 month') || time.includes('quarter');
+              case 'long':
+                return time.includes('year') || time.includes('12 month');
+              default:
+                return true;
+            }
+          });
+        }
+        
+        setProducts(filteredProducts);
       } else {
         console.warn('Unexpected response format:', data);
         setError('Unexpected data format from server');
@@ -74,7 +116,7 @@ const MarketplacePage = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedCategory, searchTerm]);
+  }, [selectedCategory, selectedSubcategory, searchTerm, priceRange, emissionReductionMin, selectedImplementationTime]);
   
   const loadCategories = async () => {
     try {
@@ -89,31 +131,46 @@ const MarketplacePage = () => {
           }))
         );
       }
+      
+      if (data && data.subcategories) {
+        setSubcategories(
+          data.subcategories.map((subcategory) => ({
+            id: subcategory,
+            name: subcategory
+          }))
+        );
+      }
     } catch (err) {
       console.error('Error loading categories:', err);
     }
   };
   
-  const loadProviders = useCallback(async () => {
+  const loadServiceProviders = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
       // Build query parameters
       const params = new URLSearchParams();
-      params.append('entry_type', 'service_provider');
       
-      if (selectedProviderType !== 'all') {
-        params.append('provider_type', selectedProviderType);
+      // Handle multiple provider categories
+      if (selectedProviderCategories.length > 0) {
+        selectedProviderCategories.forEach(catId => {
+          params.append('provider_type', catId);
+        });
       }
       
       if (searchTerm) {
         params.append('search', searchTerm);
       }
       
-      // Use direct fetch
-      const url = `${API_BASE}/profiles/providers${params.toString() ? '?' + params.toString() : ''}`;
-      const response = await fetch(url);
+      // Use service-providers endpoint
+      const url = `${API_BASE}/service-providers${params.toString() ? '?' + params.toString() : ''}`;
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -121,55 +178,86 @@ const MarketplacePage = () => {
       
       const data = await response.json();
       
-      // Handle both paginated and non-paginated responses
-      if (data && data.providers && Array.isArray(data.providers)) {
-        setProviders(data.providers);
-      } else if (Array.isArray(data)) {
+      if (Array.isArray(data)) {
         setProviders(data);
       } else {
         console.warn('Unexpected providers response format:', data);
         setProviders([]);
       }
     } catch (err) {
-      console.error('Error loading providers:', err);
-      setError('Failed to load providers. Please try again.');
+      console.error('Error loading service providers:', err);
+      setError('Failed to load service providers. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [selectedProviderType, searchTerm]);
+  }, [selectedProviderCategories, searchTerm]); // Updated dependency
   
-  const loadProviderTypes = async () => {
-    // For now, hardcode the provider types
-    const types = ['Financial', 'Auditor', 'Technology'];
-    setProviderTypes(types.map(type => ({ id: type, name: type })));
+  const loadProviderCategories = async () => {
+    try {
+      // Get the flat list of categories for the filter
+      const response = await fetch(`${API_BASE}/service-providers/categories/flat`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setProviderCategories(data);
+    } catch (err) {
+      console.error('Error loading provider categories:', err);
+      // Fallback to basic categories if API fails
+      setProviderCategories([]);
+    }
   };
   
-  const getProviderTypeStyle = (providerType) => {
-    switch (providerType) {
-      case 'Financial':
-        return {
-          border: 'border-l-4 border-green-500',
-          badge: 'bg-green-100 text-green-700',
-          text: 'text-green-700'
-        };
-      case 'Auditor':
-        return {
-          border: 'border-l-4 border-yellow-500',
-          badge: 'bg-yellow-100 text-yellow-700',
-          text: 'text-yellow-700'
-        };
-      case 'Technology':
-        return {
-          border: 'border-l-4 border-blue-500',
-          badge: 'bg-blue-100 text-blue-700',
-          text: 'text-blue-700'
-        };
-      default:
-        return {
-          border: 'border-l-4 border-purple-500',
-          badge: 'bg-purple-100 text-purple-700',
-          text: 'text-purple-700'
-        };
+  const getProviderCategoryStyle = (categoryId) => {
+    // Map category IDs to styles based on parent category
+    if ([7, 8, 9, 10, 11].includes(parseInt(categoryId))) {
+      // Core Carbon Project Consultants
+      return {
+        border: 'border-l-4 border-green-500',
+        badge: 'bg-green-100 text-green-700',
+        text: 'text-green-700'
+      };
+    } else if ([12, 13, 14, 15].includes(parseInt(categoryId))) {
+      // Financial & Trading Services
+      return {
+        border: 'border-l-4 border-yellow-500',
+        badge: 'bg-yellow-100 text-yellow-700',
+        text: 'text-yellow-700'
+      };
+    } else if ([16, 17, 18, 19].includes(parseInt(categoryId))) {
+      // Technical Specialists
+      return {
+        border: 'border-l-4 border-blue-500',
+        badge: 'bg-blue-100 text-blue-700',
+        text: 'text-blue-700'
+      };
+    } else if ([20, 21, 22].includes(parseInt(categoryId))) {
+      // Legal & Regulatory
+      return {
+        border: 'border-l-4 border-red-500',
+        badge: 'bg-red-100 text-red-700',
+        text: 'text-red-700'
+      };
+    } else if ([23, 24, 25, 26, 27].includes(parseInt(categoryId))) {
+      // Regional & Standards
+      return {
+        border: 'border-l-4 border-purple-500',
+        badge: 'bg-purple-100 text-purple-700',
+        text: 'text-purple-700'
+      };
+    } else {
+      // Support Services
+      return {
+        border: 'border-l-4 border-gray-500',
+        badge: 'bg-gray-100 text-gray-700',
+        text: 'text-gray-700'
+      };
     }
   };
   
@@ -181,9 +269,45 @@ const MarketplacePage = () => {
     setSearchTerm('');
     if (selectedTab === 'products') {
       setSelectedCategory('all');
+      setSelectedSubcategory('all');
+      setPriceRange({ min: '', max: '' });
+      setEmissionReductionMin('');
+      setSelectedImplementationTime('all');
     } else {
-      setSelectedProviderType('all');
+      setSelectedProviderCategories([]); // Reset to empty array for multiple selection
     }
+  };
+  
+  // Helper function to fix image URLs
+  const getSecureImageUrl = (imageUrl) => {
+    if (!imageUrl) return '/uploads/images/placeholder-project.jpg';
+    
+    if (imageUrl.startsWith('http://localhost:3001')) {
+      return imageUrl.replace('http://localhost:3001', '');
+    }
+    
+    if (imageUrl.startsWith('/')) {
+      return imageUrl;
+    }
+    
+    if (imageUrl.startsWith('http://')) {
+      return imageUrl.replace('http://', 'https://');
+    }
+    
+    return imageUrl;
+  };
+  
+  // Parse JSONB fields safely
+  const parseJsonField = (field, defaultValue = []) => {
+    if (!field) return defaultValue;
+    if (typeof field === 'string') {
+      try {
+        return JSON.parse(field);
+      } catch (e) {
+        return defaultValue;
+      }
+    }
+    return field;
   };
   
   return (
@@ -193,10 +317,10 @@ const MarketplacePage = () => {
         
         {currentUser && currentUser.role === 'solutionProvider' && (
           <Link 
-            to="/marketplace/add-solution" 
+            to="/service-providers/new" 
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
-            Add Your Solution
+            Become a Service Provider
           </Link>
         )}
       </div>
@@ -220,7 +344,7 @@ const MarketplacePage = () => {
           }`}
           onClick={() => setSelectedTab('providers')}
         >
-          Solution Providers
+          Service Providers
         </button>
       </div>
       
@@ -255,78 +379,169 @@ const MarketplacePage = () => {
             </form>
             
             {selectedTab === 'products' ? (
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Categories
-                </label>
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="cat-all"
-                      name="category"
-                      value="all"
-                      checked={selectedCategory === 'all'}
-                      onChange={() => setSelectedCategory('all')}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                    />
-                    <label htmlFor="cat-all" className="ml-2 text-sm text-gray-700">
-                      All Categories
-                    </label>
-                  </div>
-                  
-                  {categories.map(category => (
-                    <div key={category.id} className="flex items-center">
+              <>
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Categories
+                  </label>
+                  <div className="space-y-2">
+                    <div className="flex items-center">
                       <input
                         type="radio"
-                        id={`cat-${category.id}`}
+                        id="cat-all"
                         name="category"
-                        value={category.id}
-                        checked={selectedCategory === category.id}
-                        onChange={() => setSelectedCategory(category.id)}
+                        value="all"
+                        checked={selectedCategory === 'all'}
+                        onChange={() => setSelectedCategory('all')}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
                       />
-                      <label htmlFor={`cat-${category.id}`} className="ml-2 text-sm text-gray-700">
-                        {category.name}
+                      <label htmlFor="cat-all" className="ml-2 text-sm text-gray-700">
+                        All Categories
                       </label>
                     </div>
-                  ))}
+                    
+                    {categories.map(category => (
+                      <div key={category.id} className="flex items-center">
+                        <input
+                          type="radio"
+                          id={`cat-${category.id}`}
+                          name="category"
+                          value={category.id}
+                          checked={selectedCategory === category.id}
+                          onChange={() => setSelectedCategory(category.id)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                        />
+                        <label htmlFor={`cat-${category.id}`} className="ml-2 text-sm text-gray-700">
+                          {category.name}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+                
+                {/* Subcategory Filter */}
+                {subcategories.length > 0 && (
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Subcategories
+                    </label>
+                    <select
+                      value={selectedSubcategory}
+                      onChange={(e) => setSelectedSubcategory(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="all">All Subcategories</option>
+                      {subcategories.map(subcat => (
+                        <option key={subcat.id} value={subcat.id}>
+                          {subcat.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                {/* Price Range Filter */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Price Range
+                  </label>
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      placeholder="Min price"
+                      value={priceRange.min}
+                      onChange={(e) => setPriceRange({ ...priceRange, min: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max price"
+                      value={priceRange.max}
+                      onChange={(e) => setPriceRange({ ...priceRange, max: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                
+                {/* Emission Reduction Filter */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Minimum CO₂ Reduction (%)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="e.g., 50"
+                    value={emissionReductionMin}
+                    onChange={(e) => setEmissionReductionMin(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                
+                {/* Implementation Time Filter */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Implementation Time
+                  </label>
+                  <select
+                    value={selectedImplementationTime}
+                    onChange={(e) => setSelectedImplementationTime(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="all">Any timeframe</option>
+                    <option value="immediate">Immediate</option>
+                    <option value="short">1-2 months</option>
+                    <option value="medium">3-6 months</option>
+                    <option value="long">1+ years</option>
+                  </select>
+                </div>
+              </>
             ) : (
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Provider Types
+                  Service Categories (Select multiple)
                 </label>
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <input
-                      type="radio"
-                      id="type-all"
-                      name="providerType"
-                      value="all"
-                      checked={selectedProviderType === 'all'}
-                      onChange={() => setSelectedProviderType('all')}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                    />
-                    <label htmlFor="type-all" className="ml-2 text-sm text-gray-700">
-                      All Types
-                    </label>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProviderCategories([])}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Clear all
+                    </button>
+                    {selectedProviderCategories.length > 0 && (
+                      <span className="text-sm text-gray-500">
+                        ({selectedProviderCategories.length} selected)
+                      </span>
+                    )}
                   </div>
                   
-                  {providerTypes.map(type => (
-                    <div key={type.id} className="flex items-center">
+                  {providerCategories.map(category => (
+                    <div key={category.id} className="flex items-center">
                       <input
-                        type="radio"
-                        id={`type-${type.id}`}
-                        name="providerType"
-                        value={type.id}
-                        checked={selectedProviderType === type.id}
-                        onChange={() => setSelectedProviderType(type.id)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                        type="checkbox"
+                        id={`pcat-${category.id}`}
+                        value={category.id}
+                        checked={selectedProviderCategories.includes(category.id.toString())}
+                        onChange={(e) => {
+                          const categoryId = category.id.toString();
+                          if (e.target.checked) {
+                            setSelectedProviderCategories([...selectedProviderCategories, categoryId]);
+                          } else {
+                            setSelectedProviderCategories(selectedProviderCategories.filter(id => id !== categoryId));
+                          }
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
-                      <label htmlFor={`type-${type.id}`} className="ml-2 text-sm text-gray-700">
-                        {type.name}
+                      <label htmlFor={`pcat-${category.id}`} className="ml-2 text-sm text-gray-700 flex-1 cursor-pointer">
+                        <span className="font-medium">{category.category_name}</span>
+                        {category.parent_category_name && (
+                          <span className="text-xs text-gray-500 block">
+                            {category.parent_category_name}
+                          </span>
+                        )}
                       </label>
                     </div>
                   ))}
@@ -343,7 +558,7 @@ const MarketplacePage = () => {
           </div>
         </div>
         
-        {/* Products Grid */}
+        {/* Main Content Grid */}
         <div className="w-full md:w-3/4">
           {loading ? (
             <div className="flex justify-center items-center h-64">
@@ -354,7 +569,7 @@ const MarketplacePage = () => {
               <p className="font-semibold">Error</p>
               <p>{error}</p>
               <button 
-                onClick={selectedTab === 'products' ? loadProducts : loadProviders} 
+                onClick={selectedTab === 'products' ? loadProducts : loadServiceProviders} 
                 className="mt-2 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
               >
                 Try Again
@@ -376,7 +591,7 @@ const MarketplacePage = () => {
                   >
                     <div className="relative h-48 overflow-hidden">
                       <img 
-                        src={product.image_url || '/uploads/images/placeholder-project.jpg'} 
+                        src={getSecureImageUrl(product.image_url)} 
                         alt={product.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
@@ -432,25 +647,29 @@ const MarketplacePage = () => {
               </div>
             )
           ) : (
-            // Providers view
+            // Service Providers view
             providers.length === 0 ? (
               <div className="bg-white rounded-lg shadow-md p-8 text-center">
-                <p className="text-gray-600 text-lg">No solution providers found</p>
+                <p className="text-gray-600 text-lg">No service providers found</p>
                 <p className="text-gray-500 mt-2">Try adjusting your filters or search terms</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {providers.map((provider) => {
-                  const style = getProviderTypeStyle(provider.provider_type || 'Technology');
+                  const style = getProviderCategoryStyle(provider.provider_type);
+                  const specializations = parseJsonField(provider.specializations, []);
+                  const certifications = parseJsonField(provider.certifications, []);
+                  const regions = parseJsonField(provider.regions_served, []);
+                  
                   return (
                     <Link 
-                      to={`/providers/${provider.user_id}`} 
-                      key={provider.id || provider.user_id}
+                      to={`/service-providers/${provider.id}`} 
+                      key={provider.id}
                       className={`bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 ${style.border}`}
                     >
                       <div className="relative h-48 overflow-hidden bg-gray-100">
                         <img 
-                          src={provider.profile_image || '/uploads/images/placeholder-project.jpg'} 
+                          src={getSecureImageUrl(provider.image_url)} 
                           alt={provider.company_name}
                           className="w-full h-full object-cover"
                           onError={(e) => {
@@ -463,11 +682,11 @@ const MarketplacePage = () => {
                       <div className="p-5">
                         <div className="flex items-center justify-between mb-3">
                           <span className={`text-xs font-semibold px-3 py-1 rounded-full ${style.badge}`}>
-                            {provider.provider_type || 'Technology'}
+                            {provider.primary_provider_category_name || 'Service Provider'}
                           </span>
-                          {provider.company_size && (
+                          {provider.team_size && (
                             <span className="text-xs text-gray-500">
-                              {provider.company_size}
+                              {provider.team_size}
                             </span>
                           )}
                         </div>
@@ -476,15 +695,47 @@ const MarketplacePage = () => {
                           {provider.company_name}
                         </h3>
                         
-                        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                          {provider.company_description || 'No description available.'}
+                        <p className="text-gray-600 text-sm mb-3 line-clamp-2">
+                          {provider.description || 'No description available.'}
                         </p>
                         
-                        {provider.reduction_percentage && (
-                          <div className="flex items-center mt-2">
-                            <span className={`font-bold ${style.text}`}>
-                              {provider.reduction_percentage}% reduction capability
-                            </span>
+                        {specializations.length > 0 && (
+                          <div className="mb-2">
+                            <div className="flex flex-wrap gap-1">
+                              {specializations.slice(0, 3).map((spec, index) => (
+                                <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                  {spec}
+                                </span>
+                              ))}
+                              {specializations.length > 3 && (
+                                <span className="text-xs text-gray-500">
+                                  +{specializations.length - 3} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {provider.years_experience && (
+                          <div className="flex items-center text-sm text-gray-700">
+                            <svg className="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {provider.years_experience} years experience
+                          </div>
+                        )}
+                        
+                        {provider.pricing_model && (
+                          <div className="flex items-center mt-1 text-sm text-gray-700">
+                            <svg className="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {provider.pricing_model}
+                            {provider.hourly_rate_min && provider.hourly_rate_max && (
+                              <span className="ml-1">
+                                ${provider.hourly_rate_min}-${provider.hourly_rate_max}/hr
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
