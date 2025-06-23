@@ -1,9 +1,9 @@
 // utils/imageUrlHelper.js
 
 /**
- * Converts localhost image URLs to proper production URLs
- * This handles the mixed content issue when running in production
- */
+* Converts localhost image URLs to proper production URLs
+* This handles the mixed content issue when running in production
+*/
 export const getImageUrl = (imageUrl) => {
   if (!imageUrl) return '/uploads/images/placeholder-project.jpg';
   
@@ -26,19 +26,12 @@ export const getImageUrl = (imageUrl) => {
   
   // Default case - prepend with a forward slash to make it relative
   return `/${imageUrl}`;
-};
-
-/**
- * Usage example in components:
- * 
- * import { getImageUrl } from './utils/imageUrlHelper';
- * 
- * <img 
- *   src={getImageUrl(product.image_url)} 
- *   alt={product.name}
- *   onError={(e) => {
- *     e.target.onerror = null;
- *     e.target.src = '/uploads/images/placeholder-project.jpg';
- *   }}
- * />
+ };
+ 
+ /**
+ * Handles image loading errors by setting a placeholder image
  */
+ export const handleImageError = (e) => {
+  e.target.onerror = null;
+  e.target.src = '/uploads/images/placeholder-project.jpg';
+ };
