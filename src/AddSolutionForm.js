@@ -2,9 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthSystem';
-import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:3001/api';
+import api from './api-config';
 
 // Material type options based on product category
 const MATERIAL_TYPES = {
@@ -157,7 +155,7 @@ const AddSolutionForm = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await axios.get('/api/service-providers/categories');
+      const response = await api.get('/service-providers/categories');
       setCategories(response.data);
     } catch (error) {
       console.error('Error fetching categories:', error);
@@ -262,13 +260,7 @@ const AddSolutionForm = () => {
   
   // Submit provider to the API
   const submitProvider = async () => {
-    const token = localStorage.getItem('token');
-    
-    await axios.post('/api/service-providers', providerFormData, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    await api.post('/service-providers', providerFormData);
   };
   
   // Submit product to the API - FIXED VERSION
@@ -301,14 +293,7 @@ const AddSolutionForm = () => {
       project_types: projectTypes // Add this line
     };
     
-    const token = localStorage.getItem('token');
-    
-    await axios.post(`${API_BASE_URL}/marketplace/products`, productData, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    });
+    await api.post('/marketplace/products', productData);
   };
   // Render provider form fields
   const renderProviderFields = () => (
