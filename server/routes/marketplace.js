@@ -28,9 +28,9 @@ async function columnExists(tableName, columnName) {
 router.get('/products', async (req, res) => {
   try {
     // Get query parameters for filtering
-    const { category, subcategory, entry_type, search, projectType } = req.query;
+    const { category, subcategory, entry_type, search, projectType, user_id } = req.query;
     
-    console.log('Query parameters:', { category, subcategory, entry_type, search, projectType });
+    console.log('Query parameters:', { category, subcategory, entry_type, search, projectType, user_id });
     
     // Check for required columns
     const hasCategory = await columnExists('marketplace_products', 'category');
@@ -105,6 +105,18 @@ router.get('/products', async (req, res) => {
       query += ` AND (mp.name ILIKE $${paramIndex} OR mp.description ILIKE $${paramIndex})`;
       queryParams.push(`%${search}%`);
       paramIndex++;
+    }
+    
+    // Filter by user_id if provided
+    if (user_id) {
+      if (hasUserId) {
+        query += ` AND mp.user_id = $${paramIndex++}`;
+        queryParams.push(user_id);
+      } else {
+        // If user_id doesn't exist in marketplace_products, use the join
+        query += ` AND pp.user_id = $${paramIndex++}`;
+        queryParams.push(user_id);
+      }
     }
     
     // Order by timestamp if available

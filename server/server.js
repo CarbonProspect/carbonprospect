@@ -14,7 +14,6 @@ const assessmentProjectRoutes = require('./routes/assessmentProjectRoutes');
 const carbonFootprintRoutes = require('./routes/carbonFootprintRoutes');
 const uploadsRouter = require('./routes/uploads');
 const article6ProjectsRoutes = require('./routes/article6ProjectsRoutes');
-const serviceProviderRoutes = require('./routes/serviceProviderRoutes');
 const analyticsRoutes = require('./routes/analytics');
 
 // Try to import creditSystemRoutes with error handling
@@ -106,7 +105,6 @@ app.use('/api/assessment-projects', assessmentProjectRoutes);
 app.use('/api/carbon-footprints', carbonFootprintRoutes);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/article6-projects', article6ProjectsRoutes);
-app.use('/api/service-providers', serviceProviderRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
 // Only add credit system routes if they were loaded successfully

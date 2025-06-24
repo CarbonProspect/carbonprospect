@@ -1,19 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth, getValidToken } from './AuthSystem';
-import { apiCall } from './api-config';
+import { useAuth } from './AuthSystem';
+
+// Use relative URLs with proxy (same pattern as MarketplacePage)
+const API_BASE = process.env.NODE_ENV === 'production' 
+  ? '/api'  // In production, use relative path (same domain)
+  : 'http://localhost:3001/api';  // In development, use localhost:3001 (not 3002!)
+
+// Replace apiCall with direct fetch
+const fetchWithAuth = async (method, endpoint, data = null) => {
+  const token = localStorage.getItem('token');
+  const config = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  };
+  
+  if (data && method !== 'GET') {
+    config.body = JSON.stringify(data);
+  }
+  
+  const response = await fetch(`${API_BASE}${endpoint}`, config);
+  
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw errorData;
+  }
+  
+  return response.json();
+};
 
 const ProfileEdit = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated, currentUser } = useAuth();
   
+  // ... (keep all the existing state variables and constants)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saveError, setSaveError] = useState(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [profileType, setProfileType] = useState('provider');
+  const [fieldErrors, setFieldErrors] = useState({});
   
   // Form data state
   const [formData, setFormData] = useState({
@@ -75,8 +106,6 @@ const ProfileEdit = () => {
   });
   
   // Options for dropdowns
-  // Developer profiles have different allowed organization types due to database constraint
-  // IMPORTANT: These must be lowercase to match the database constraint
   const developerOrganizationTypes = [
     { value: 'corporation', label: 'Corporation' },
     { value: 'government', label: 'Government' },
@@ -127,11 +156,11 @@ const ProfileEdit = () => {
   ];
   
   const companySizeOptions = [
-    'Self-employed',
-    'Small (1-50 employees)',
-    'Medium (51-250 employees)',
-    'Large (251-1000 employees)',
-    'Enterprise (1000+ employees)'
+    { value: 'self-employed', label: 'Self-employed' },
+    { value: 'small', label: 'Small (1-50 employees)' },
+    { value: 'medium', label: 'Medium (51-250 employees)' },
+    { value: 'large', label: 'Large (251-1000 employees)' },
+    { value: 'enterprise', label: 'Enterprise (1000+ employees)' }
   ];
   
   const regionOptions = [
@@ -174,6 +203,95 @@ const ProfileEdit = () => {
     'Other'
   ];
   
+  // Helper function to safely parse JSON fields
+  const safeParseJSON = (field, defaultValue = {}) => {
+    if (!field) return defaultValue;
+    if (typeof field === 'object') return field;
+    try {
+      return JSON.parse(field);
+    } catch (e) {
+      console.error('Error parsing JSON:', e);
+      return defaultValue;
+    }
+  };
+  
+  // Helper function to ensure array fields are arrays
+  const ensureArray = (field) => {
+    if (!field) return [];
+    if (Array.isArray(field)) return field;
+    if (typeof field === 'string') {
+      try {
+        const parsed = JSON.parse(field);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  };
+  
+  // Validation function
+  const validateForm = () => {
+    const errors = {};
+    
+    if (profileType === 'provider' || profileType === 'service_provider') {
+      if (!formData.company_name && !formData.organization_name) {
+        errors.company_name = 'Company or organization name is required';
+      }
+      
+      if (formData.company_size && !companySizeOptions.find(opt => opt.value === formData.company_size)) {
+        errors.company_size = 'Please select a valid company size';
+      }
+    }
+    
+    if (profileType === 'developer') {
+      if (!formData.organization_name) {
+        errors.organization_name = 'Organization name is required';
+      }
+      
+      if (!formData.organization_type) {
+        errors.organization_type = 'Organization type is required';
+      }
+      
+      const validDevOrgTypes = developerOrganizationTypes.map(t => t.value);
+      if (formData.organization_type && !validDevOrgTypes.includes(formData.organization_type)) {
+        errors.organization_type = 'Please select a valid organization type';
+      }
+    }
+    
+    // Validate numeric fields
+    if (formData.founded_year && (formData.founded_year < 1800 || formData.founded_year > new Date().getFullYear())) {
+      errors.founded_year = 'Please enter a valid year between 1800 and ' + new Date().getFullYear();
+    }
+    
+    if (formData.years_experience && formData.years_experience < 0) {
+      errors.years_experience = 'Years of experience cannot be negative';
+    }
+    
+    if (formData.hourly_rate_min && formData.hourly_rate_max && formData.hourly_rate_min > formData.hourly_rate_max) {
+      errors.hourly_rate_max = 'Maximum rate must be greater than minimum rate';
+    }
+    
+    // Validate email if provided
+    if (formData.contact_info.contact_email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.contact_info.contact_email)) {
+        errors['contact_info.contact_email'] = 'Please enter a valid email address';
+      }
+    }
+    
+    // Validate URLs if provided
+    if (formData.website) {
+      try {
+        new URL(formData.website.startsWith('http') ? formData.website : 'https://' + formData.website);
+      } catch (e) {
+        errors.website = 'Please enter a valid website URL';
+      }
+    }
+    
+    return errors;
+  };
+  
   // Fetch profile data
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -187,15 +305,16 @@ const ProfileEdit = () => {
         setLoading(true);
         console.log(`Fetching profile data for ID: ${id}`);
         
-        // Use the unified endpoint
-        const profileData = await apiCall('GET', `/profiles/unified/${id}`);
+        // Use the unified endpoint with direct fetch
+        const profileData = await fetchWithAuth('GET', `/profiles/unified/${id}`);
         console.log('Unified profile data:', profileData);
         
         if (profileData.profile_type === 'none') {
           // Handle case where user has no profile
           if (profileData.user_exists && profileData.user_info && currentUser && currentUser.id === parseInt(id)) {
             // This is the current user without a profile - allow them to create one
-            setProfileType(profileData.suggested_profile_type || 'provider');
+            const suggestedType = profileData.suggested_profile_type || 'service_provider';
+            setProfileType(suggestedType === 'service_provider' ? 'provider' : suggestedType);
             
             // Pre-populate with user data
             setFormData(prev => ({
@@ -219,37 +338,64 @@ const ProfileEdit = () => {
           }
         }
         
-        setProfileType(profileData.profile_type);
+        // Map profile types - treat service_provider as provider for frontend
+        const mappedProfileType = profileData.profile_type === 'service_provider' ? 'provider' : profileData.profile_type;
+        setProfileType(mappedProfileType);
         
-        // The unified endpoint already parses JSON fields, so we don't need to parse them again
+        // Parse visibility settings - handle both old and new naming conventions
+        const visibilitySettings = safeParseJSON(profileData.visibility_settings, {});
+        const parsedVisibilitySettings = {
+          publicProfile: visibilitySettings.publicProfile !== undefined ? visibilitySettings.publicProfile : true,
+          showContactInfo: visibilitySettings.showContactInfo !== undefined ? visibilitySettings.showContactInfo : (visibilitySettings.contactInfo !== undefined ? visibilitySettings.contactInfo : true),
+          showFinancials: visibilitySettings.showFinancials !== undefined ? visibilitySettings.showFinancials : (visibilitySettings.financialInfo !== undefined ? visibilitySettings.financialInfo : false),
+          showProjects: visibilitySettings.showProjects !== undefined ? visibilitySettings.showProjects : (visibilitySettings.projectHistory !== undefined ? visibilitySettings.projectHistory : true)
+        };
+        
+        // Parse social profiles
+        const socialProfiles = safeParseJSON(profileData.social_profiles, {
+          linkedin: '',
+          twitter: '',
+          facebook: '',
+          instagram: ''
+        });
+        
+        // Parse contact info
+        const contactInfo = safeParseJSON(profileData.contact_info, {
+          contact_name: '',
+          contact_email: '',
+          contact_phone: '',
+          contact_position: ''
+        });
+        
+        // Set form data with all fields properly populated
         setFormData({
           // Common fields
           organization_name: profileData.organization_name || profileData.company_name || '',
           company_name: profileData.company_name || profileData.organization_name || '',
-          company_description: profileData.company_description || '',
+          company_description: profileData.company_description || profileData.description || '',
           organization_type: profileData.organization_type || '',
           provider_type: profileData.provider_type || 'Service Provider',
           entry_type: profileData.entry_type || 'service_provider',
-          headquarters_country: profileData.headquarters_country || '',
-          headquarters_city: profileData.headquarters_city || '',
+          headquarters_country: profileData.headquarters_country || profileData.country || '',
+          headquarters_city: profileData.headquarters_city || profileData.city || '',
           industry: profileData.industry || '',
           website: profileData.website || '',
           founded_year: profileData.founded_year || null,
           
           // Developer-specific fields
-          regions: profileData.regions || [],
-          project_types: profileData.project_types || [],
-          carbon_goals: profileData.carbon_goals || {},
+          regions: ensureArray(profileData.regions),
+          project_types: ensureArray(profileData.project_types),
+          carbon_goals: safeParseJSON(profileData.carbon_goals, {}),
           budget_range: profileData.budget_range || '',
-          project_timeline: profileData.project_timeline || {},
-          decision_makers: profileData.decision_makers || [],
-          previous_projects: profileData.previous_projects || [],
+          project_timeline: safeParseJSON(profileData.project_timeline, {}),
+          decision_makers: ensureArray(profileData.decision_makers),
+          previous_projects: ensureArray(profileData.previous_projects),
           
           // Provider-specific fields
           company_size: profileData.company_size || '',
-          services: profileData.services || [],
-          specializations: profileData.specializations || [],
-          certifications: profileData.certifications || [],
+          services: ensureArray(profileData.services),
+          specializations: ensureArray(profileData.specializations),
+          certifications: ensureArray(profileData.certifications),
           team_size: profileData.team_size || '',
           years_experience: profileData.years_experience || null,
           pricing_model: profileData.pricing_model || '',
@@ -257,33 +403,29 @@ const ProfileEdit = () => {
           hourly_rate_max: profileData.hourly_rate_max || null,
           project_minimum: profileData.project_minimum || null,
           availability: profileData.availability || '',
-          languages: profileData.languages || [],
-          social_profiles: profileData.social_profiles || {
-            linkedin: '',
-            twitter: '',
-            facebook: '',
-            instagram: ''
+          languages: ensureArray(profileData.languages),
+          social_profiles: {
+            linkedin: socialProfiles.linkedin || '',
+            twitter: socialProfiles.twitter || '',
+            facebook: socialProfiles.facebook || '',
+            instagram: socialProfiles.instagram || ''
           },
-          contact_info: profileData.contact_info || {
-            contact_name: '',
-            contact_email: '',
-            contact_phone: '',
-            contact_position: ''
+          contact_info: {
+            contact_name: contactInfo.contact_name || '',
+            contact_email: contactInfo.contact_email || '',
+            contact_phone: contactInfo.contact_phone || '',
+            contact_position: contactInfo.contact_position || ''
           },
           
-          // Visibility settings for all profile types
-          visibility_settings: profileData.visibility_settings || {
-            publicProfile: true,
-            showContactInfo: true,
-            showFinancials: false,
-            showProjects: true
-          }
+          // Visibility settings
+          visibility_settings: parsedVisibilitySettings
         });
         
+        console.log('Form data set to:', formData);
         setLoading(false);
       } catch (err) {
         console.error('Error fetching profile data:', err);
-        setError('Failed to load profile data: ' + (err.message || 'Unknown error'));
+        setError('Failed to load profile data: ' + (err.message || err.error || 'Unknown error'));
         setLoading(false);
       }
     };
@@ -291,9 +433,16 @@ const ProfileEdit = () => {
     fetchProfileData();
   }, [id, isAuthenticated, currentUser]);
   
-  // Handle form field changes
+  // Handle form field changes (keep all existing handlers)
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    
+    // Clear field error when user starts typing
+    if (fieldErrors[name]) {
+      const newFieldErrors = { ...fieldErrors };
+      delete newFieldErrors[name];
+      setFieldErrors(newFieldErrors);
+    }
     
     if (name.includes('.')) {
       // Handle nested objects like contact_info.contact_name
@@ -305,6 +454,13 @@ const ProfileEdit = () => {
           [child]: type === 'checkbox' ? checked : value
         }
       }));
+      
+      // Clear nested field errors
+      if (fieldErrors[name]) {
+        const newFieldErrors = { ...fieldErrors };
+        delete newFieldErrors[name];
+        setFieldErrors(newFieldErrors);
+      }
     } else if (type === 'checkbox') {
       // Handle checkbox inputs
       setFormData(prev => ({
@@ -378,40 +534,44 @@ const ProfileEdit = () => {
       }
     }));
   };
-  // Handle form submission
+  
+  // Handle form submission with fixed fetch
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     // Clear previous messages
     setSaveError(null);
+    setFieldErrors({});
     setSaveSuccess(false);
     
     // Validate form
-    if (profileType === 'provider' && !formData.company_name && !formData.organization_name) {
-      setSaveError('Company or organization name is required');
-      return;
-    } else if (profileType === 'developer' && !formData.organization_name) {
-      setSaveError('Organization name is required');
-      return;
-    }
-    
-    // Additional validation for developer profiles
-    if (profileType === 'developer' && !formData.organization_type) {
-      setSaveError('Organization type is required for developer profiles');
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setSaveError('Please fix the errors below before saving');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     
     try {
       setIsSaving(true);
       
-      // Determine which endpoint to use based on profile type
+      // FIXED: Determine which endpoint to use based on profile type
       let endpoint = '';
       if (profileType === 'developer') {
         endpoint = `/profiles/developer/${id}`;
-      } else if (profileType === 'provider') {
-        endpoint = `/profiles/provider/${id}`;
+      } else if (profileType === 'provider' || profileType === 'service_provider') {
+        // Use the new service-provider endpoint for all provider types
+        endpoint = `/profiles/service-provider/${id}`;
       } else if (profileType === 'consultant') {
         endpoint = `/profiles/consultant/${id}`;
+      } else {
+        // Default fallback - if no specific profile type, assume service provider for solutionProvider role
+        if (currentUser && currentUser.role === 'solutionProvider') {
+          endpoint = `/profiles/service-provider/${id}`;
+        } else {
+          throw new Error('Unknown profile type: ' + profileType);
+        }
       }
       
       // Prepare data for submission based on profile type
@@ -558,9 +718,9 @@ const ProfileEdit = () => {
       console.log(`Submitting to endpoint: ${endpoint}`);
       console.log('Final data being sent:', dataToSend);
       
-      // Send profile update request using apiCall
+      // Send profile update request using direct fetch
       try {
-        const updatedProfile = await apiCall('PUT', endpoint, dataToSend);
+        const updatedProfile = await fetchWithAuth('PUT', endpoint, dataToSend);
         console.log('Profile updated successfully:', updatedProfile);
         
         // Update successful
@@ -572,20 +732,65 @@ const ProfileEdit = () => {
           navigate(`/profile/${id}`);
         }, 2000);
       } catch (apiError) {
-        console.error('API Error details:', {
-          message: apiError.message,
-          status: apiError.status,
-          code: apiError.code,
-          fullError: apiError
-        });
-        throw apiError;
+        console.error('API Error details:', apiError);
+        
+        // Extract user-friendly error message
+        let errorMessage = 'Failed to update profile.';
+        const errorToFieldMap = {
+          'company_size': 'company_size',
+          'organization_type': 'organization_type',
+          'founded_year': 'founded_year',
+          'email': 'contact_info.contact_email',
+          'website': 'website'
+        };
+        
+        if (apiError) {
+          // Use the specific error message from backend
+          if (apiError.error) {
+            errorMessage = apiError.error;
+          } else if (apiError.message) {
+            errorMessage = apiError.message;
+          }
+          
+          // Map error to field if possible
+          if (apiError.field) {
+            const fieldKey = errorToFieldMap[apiError.field] || apiError.field;
+            setFieldErrors({ [fieldKey]: errorMessage });
+            
+            // Focus on the problematic field
+            setTimeout(() => {
+              const fieldElement = document.querySelector(`[name="${fieldKey}"]`);
+              if (fieldElement) {
+                fieldElement.focus();
+                fieldElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 100);
+          }
+          
+          // Handle specific error codes
+          if (apiError.code === 'INVALID_COMPANY_SIZE') {
+            setFieldErrors({ company_size: 'Please select a valid company size from the dropdown' });
+          } else if (apiError.code === 'INVALID_ORG_TYPE') {
+            setFieldErrors({ organization_type: 'Please select a valid organization type from the dropdown' });
+          }
+        }
+        
+        setSaveError(errorMessage);
+        setIsSaving(false);
+        
+        // Scroll to error message
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
-      console.error('Error updating profile:', err);
-      setSaveError('Failed to update profile: ' + (err.message || 'Unknown error'));
+      console.error('Unexpected error:', err);
+      setSaveError('An unexpected error occurred. Please check your inputs and try again.');
       setIsSaving(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
+
+  // Keep all the existing JSX (loading, error states, and form rendering)
+  // ... rest of the component remains the same ...
   
   // Loading state
   if (loading) {
@@ -641,22 +846,8 @@ const ProfileEdit = () => {
           </div>
         )}
         
+        {/* Keep all the existing form JSX exactly as it is */}
         <form onSubmit={handleSubmit} className="bg-white shadow-md rounded-lg p-6">
-          {/* FORM STATE DEBUG - Remove after testing */}
-          {isProfileOwner && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <h3 className="font-bold text-blue-800 mb-2">Form State Debug</h3>
-              <div className="text-xs font-mono space-y-2">
-                <p><strong>Website:</strong> "{formData.website}"</p>
-                <p><strong>Contact Email:</strong> "{formData.contact_info.contact_email}"</p>
-                <p><strong>Contact Name:</strong> "{formData.contact_info.contact_name}"</p>
-                <p><strong>LinkedIn:</strong> "{formData.social_profiles.linkedin}"</p>
-                <p><strong>Visibility Settings:</strong></p>
-                <pre>{JSON.stringify(formData.visibility_settings, null, 2)}</pre>
-              </div>
-            </div>
-          )}
-          
           {/* Basic Information Section */}
           <div className="mb-8">
             <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Basic Information</h2>
@@ -673,9 +864,14 @@ const ProfileEdit = () => {
                     name="company_name"
                     value={formData.company_name}
                     onChange={handleChange}
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors.company_name ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     required
                   />
+                  {fieldErrors.company_name && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.company_name}</p>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -688,9 +884,14 @@ const ProfileEdit = () => {
                     name="organization_name"
                     value={formData.organization_name}
                     onChange={handleChange}
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors.organization_name ? 'border-red-500' : 'border-gray-300'
+                    }`}
                     required
                   />
+                  {fieldErrors.organization_name && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.organization_name}</p>
+                  )}
                 </div>
               )}
               
@@ -723,7 +924,9 @@ const ProfileEdit = () => {
                   name="organization_type"
                   value={formData.organization_type}
                   onChange={handleChange}
-                  className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                    fieldErrors.organization_type ? 'border-red-500' : 'border-gray-300'
+                  }`}
                   required={profileType === 'developer'}
                 >
                   <option value="">Select Organization Type</option>
@@ -737,6 +940,9 @@ const ProfileEdit = () => {
                     ))
                   )}
                 </select>
+                {fieldErrors.organization_type && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.organization_type}</p>
+                )}
               </div>
               
               <div>
@@ -769,8 +975,13 @@ const ProfileEdit = () => {
                   onChange={handleChange}
                   min="1800"
                   max={new Date().getFullYear()}
-                  className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                    fieldErrors.founded_year ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
+                {fieldErrors.founded_year && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.founded_year}</p>
+                )}
                 <p className="text-xs text-gray-500 mt-1">Leave blank if not applicable</p>
               </div>
               
@@ -813,8 +1024,13 @@ const ProfileEdit = () => {
                   value={formData.website}
                   onChange={handleChange}
                   placeholder="example.com or https://example.com"
-                  className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                    fieldErrors.website ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
+                {fieldErrors.website && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.website}</p>
+                )}
                 <p className="text-xs text-gray-500 mt-1">URL will be automatically formatted with https://</p>
               </div>
               
@@ -828,13 +1044,20 @@ const ProfileEdit = () => {
                     name="company_size"
                     value={formData.company_size}
                     onChange={handleChange}
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors.company_size ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   >
                     <option value="">Select Company Size</option>
-                    {companySizeOptions.map(size => (
-                      <option key={size} value={size}>{size}</option>
+                    {companySizeOptions.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
                   </select>
+                  {fieldErrors.company_size && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.company_size}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -898,8 +1121,13 @@ const ProfileEdit = () => {
                   name="contact_info.contact_email"
                   value={formData.contact_info.contact_email}
                   onChange={handleChange}
-                  className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                  className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                    fieldErrors['contact_info.contact_email'] ? 'border-red-500' : 'border-gray-300'
+                  }`}
                 />
+                {fieldErrors['contact_info.contact_email'] && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors['contact_info.contact_email']}</p>
+                )}
               </div>
               
               <div>
@@ -934,8 +1162,13 @@ const ProfileEdit = () => {
                     value={formData.social_profiles.linkedin || ''}
                     onChange={handleChange}
                     placeholder="linkedin.com/company/..."
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors['social_profiles.linkedin'] ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   />
+                  {fieldErrors['social_profiles.linkedin'] && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors['social_profiles.linkedin']}</p>
+                  )}
                 </div>
                 
                 <div>
@@ -949,8 +1182,13 @@ const ProfileEdit = () => {
                     value={formData.social_profiles.twitter || ''}
                     onChange={handleChange}
                     placeholder="twitter.com/..."
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors['social_profiles.twitter'] ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   />
+                  {fieldErrors['social_profiles.twitter'] && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors['social_profiles.twitter']}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1034,8 +1272,13 @@ const ProfileEdit = () => {
                     value={formData.years_experience || ''}
                     onChange={handleChange}
                     min="0"
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors.years_experience ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   />
+                  {fieldErrors.years_experience && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.years_experience}</p>
+                  )}
                 </div>
               </div>
               
@@ -1049,7 +1292,9 @@ const ProfileEdit = () => {
                     name="pricing_model"
                     value={formData.pricing_model || ''}
                     onChange={handleChange}
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors.pricing_model ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   >
                     <option value="">Select Pricing Model</option>
                     <option value="hourly">Hourly</option>
@@ -1058,6 +1303,9 @@ const ProfileEdit = () => {
                     <option value="subscription">Subscription</option>
                     <option value="custom">Custom</option>
                   </select>
+                  {fieldErrors.pricing_model && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.pricing_model}</p>
+                  )}
                 </div>
                 
                 <div>
@@ -1069,7 +1317,9 @@ const ProfileEdit = () => {
                     name="availability"
                     value={formData.availability || ''}
                     onChange={handleChange}
-                    className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                    className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                      fieldErrors.availability ? 'border-red-500' : 'border-gray-300'
+                    }`}
                   >
                     <option value="">Select Availability</option>
                     <option value="immediate">Immediate</option>
@@ -1077,6 +1327,9 @@ const ProfileEdit = () => {
                     <option value="within_month">Within a month</option>
                     <option value="unavailable">Currently unavailable</option>
                   </select>
+                  {fieldErrors.availability && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.availability}</p>
+                  )}
                 </div>
               </div>
               
@@ -1110,8 +1363,13 @@ const ProfileEdit = () => {
                       onChange={handleChange}
                       min="0"
                       step="10"
-                      className="shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border border-gray-300 rounded-md px-3 py-2"
+                      className={`shadow-sm focus:ring-green-500 focus:border-green-500 block w-full sm:text-sm border rounded-md px-3 py-2 ${
+                        fieldErrors.hourly_rate_max ? 'border-red-500' : 'border-gray-300'
+                      }`}
                     />
+                    {fieldErrors.hourly_rate_max && (
+                      <p className="mt-1 text-sm text-red-600">{fieldErrors.hourly_rate_max}</p>
+                    )}
                   </div>
                 </div>
               )}

@@ -1,4 +1,4 @@
-// MarketplacePage.js - Updated with multiple category selection and image URL fixes
+// MarketplacePage.js - Updated to show both products and services
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthSystem';
@@ -16,32 +16,40 @@ const MarketplacePage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedTab, setSelectedTab] = useState('products');
+  const [selectedTab, setSelectedTab] = useState('products'); // Add tab state
   
-  // New state for service providers - UPDATED for multiple selection
-  const [providers, setProviders] = useState([]);
-  const [providerCategories, setProviderCategories] = useState([]);
-  const [selectedProviderCategories, setSelectedProviderCategories] = useState([]); // Changed to array
-  
-  // Additional filter states for products
+  // Additional filter states
   const [subcategories, setSubcategories] = useState([]);
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [priceRange, setPriceRange] = useState({ min: '', max: '' });
   const [emissionReductionMin, setEmissionReductionMin] = useState('');
   const [selectedImplementationTime, setSelectedImplementationTime] = useState('all');
   
+  // Service-specific filters
+  const [serviceCategories] = useState([
+    'All Services',
+    'Carbon Finance',
+    'Carbon Accounting', 
+    'Project Development',
+    'Project Validation/Verification',
+    'Technology Provider',
+    'Monitoring & Measurement',
+    'Strategy Consulting',
+    'Legal Services',
+    'Investment Advisory',
+    'Other Services'
+  ]);
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState('All Services');
+  
   const { currentUser } = useAuth();
   
   // Load data based on selected tab
   useEffect(() => {
+    loadProducts();
     if (selectedTab === 'products') {
-      loadProducts();
       loadCategories();
-    } else {
-      loadServiceProviders();
-      loadProviderCategories();
     }
-  }, [selectedTab, selectedCategory, selectedSubcategory, searchTerm, selectedProviderCategories, priceRange, emissionReductionMin, selectedImplementationTime]); // Updated dependency
+  }, [selectedTab, selectedCategory, selectedSubcategory, searchTerm, priceRange, emissionReductionMin, selectedImplementationTime, selectedServiceCategory]);
   
   const loadProducts = useCallback(async () => {
     try {
@@ -49,12 +57,23 @@ const MarketplacePage = () => {
       setError(null);
       
       const params = new URLSearchParams();
-      if (selectedCategory !== 'all') {
-        params.append('category', selectedCategory);
+      
+      // Filter by entry type based on tab
+      if (selectedTab === 'services') {
+        params.append('entry_type', 'service');
+        if (selectedServiceCategory !== 'All Services') {
+          params.append('subcategory', selectedServiceCategory);
+        }
+      } else {
+        params.append('entry_type', 'product');
+        if (selectedCategory !== 'all') {
+          params.append('category', selectedCategory);
+        }
+        if (selectedSubcategory !== 'all') {
+          params.append('subcategory', selectedSubcategory);
+        }
       }
-      if (selectedSubcategory !== 'all') {
-        params.append('subcategory', selectedSubcategory);
-      }
+      
       if (searchTerm) {
         params.append('search', searchTerm);
       }
@@ -69,41 +88,44 @@ const MarketplacePage = () => {
       const data = await response.json();
       
       if (Array.isArray(data)) {
-        // Apply client-side filters for price and emission reduction
+        // Apply client-side filters
         let filteredProducts = data;
         
-        if (priceRange.min || priceRange.max) {
-          filteredProducts = filteredProducts.filter(product => {
-            const price = product.unit_price || 0;
-            const minPrice = priceRange.min ? parseFloat(priceRange.min) : 0;
-            const maxPrice = priceRange.max ? parseFloat(priceRange.max) : Infinity;
-            return price >= minPrice && price <= maxPrice;
-          });
-        }
-        
-        if (emissionReductionMin) {
-          filteredProducts = filteredProducts.filter(product => {
-            const reduction = product.emissions_reduction_factor || 0;
-            return reduction >= parseFloat(emissionReductionMin) / 100;
-          });
-        }
-        
-        if (selectedImplementationTime !== 'all') {
-          filteredProducts = filteredProducts.filter(product => {
-            const time = product.implementation_time || '';
-            switch (selectedImplementationTime) {
-              case 'immediate':
-                return time.toLowerCase().includes('immediate') || time.toLowerCase().includes('instant');
-              case 'short':
-                return time.includes('week') || time.includes('1-2 month');
-              case 'medium':
-                return time.includes('3-6 month') || time.includes('quarter');
-              case 'long':
-                return time.includes('year') || time.includes('12 month');
-              default:
-                return true;
-            }
-          });
+        if (selectedTab === 'products') {
+          // Product-specific filters
+          if (priceRange.min || priceRange.max) {
+            filteredProducts = filteredProducts.filter(product => {
+              const price = product.unit_price || 0;
+              const minPrice = priceRange.min ? parseFloat(priceRange.min) : 0;
+              const maxPrice = priceRange.max ? parseFloat(priceRange.max) : Infinity;
+              return price >= minPrice && price <= maxPrice;
+            });
+          }
+          
+          if (emissionReductionMin) {
+            filteredProducts = filteredProducts.filter(product => {
+              const reduction = product.emissions_reduction_factor || 0;
+              return reduction >= parseFloat(emissionReductionMin) / 100;
+            });
+          }
+          
+          if (selectedImplementationTime !== 'all') {
+            filteredProducts = filteredProducts.filter(product => {
+              const time = product.implementation_time || '';
+              switch (selectedImplementationTime) {
+                case 'immediate':
+                  return time.toLowerCase().includes('immediate') || time.toLowerCase().includes('instant');
+                case 'short':
+                  return time.includes('week') || time.includes('1-2 month');
+                case 'medium':
+                  return time.includes('3-6 month') || time.includes('quarter');
+                case 'long':
+                  return time.includes('year') || time.includes('12 month');
+                default:
+                  return true;
+              }
+            });
+          }
         }
         
         setProducts(filteredProducts);
@@ -113,11 +135,11 @@ const MarketplacePage = () => {
       }
     } catch (err) {
       console.error('Error loading products:', err);
-      setError('Failed to load products. Please try again.');
+      setError('Failed to load solutions. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [selectedCategory, selectedSubcategory, searchTerm, priceRange, emissionReductionMin, selectedImplementationTime]);
+  }, [selectedTab, selectedCategory, selectedSubcategory, searchTerm, priceRange, emissionReductionMin, selectedImplementationTime, selectedServiceCategory]);
   
   const loadCategories = async () => {
     try {
@@ -125,11 +147,14 @@ const MarketplacePage = () => {
       const data = await response.json();
       
       if (data && data.categories) {
+        // Filter out 'Services' from product categories
         setCategories(
-          data.categories.map((category) => ({
-            id: category,
-            name: category
-          }))
+          data.categories
+            .filter(cat => cat !== 'Services')
+            .map((category) => ({
+              id: category,
+              name: category
+            }))
         );
       }
       
@@ -146,151 +171,33 @@ const MarketplacePage = () => {
     }
   };
   
-  const loadServiceProviders = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      // Build query parameters
-      const params = new URLSearchParams();
-      
-      // Handle multiple provider categories
-      if (selectedProviderCategories.length > 0) {
-        selectedProviderCategories.forEach(catId => {
-          params.append('provider_type', catId);
-        });
-      }
-      
-      if (searchTerm) {
-        params.append('search', searchTerm);
-      }
-      
-      // Use service-providers endpoint
-      const url = `${API_BASE}/service-providers${params.toString() ? '?' + params.toString() : ''}`;
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (Array.isArray(data)) {
-        setProviders(data);
-      } else {
-        console.warn('Unexpected providers response format:', data);
-        setProviders([]);
-      }
-    } catch (err) {
-      console.error('Error loading service providers:', err);
-      setError('Failed to load service providers. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedProviderCategories, searchTerm]); // Updated dependency
-  
-  const loadProviderCategories = async () => {
-    try {
-      // Get the flat list of categories for the filter
-      const response = await fetch(`${API_BASE}/service-providers/categories/flat`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      setProviderCategories(data);
-    } catch (err) {
-      console.error('Error loading provider categories:', err);
-      // Fallback to basic categories if API fails
-      setProviderCategories([]);
-    }
-  };
-  
-  const getProviderCategoryStyle = (categoryId) => {
-    // Map category IDs to styles based on parent category
-    if ([7, 8, 9, 10, 11].includes(parseInt(categoryId))) {
-      // Core Carbon Project Consultants
-      return {
-        border: 'border-l-4 border-green-500',
-        badge: 'bg-green-100 text-green-700',
-        text: 'text-green-700'
-      };
-    } else if ([12, 13, 14, 15].includes(parseInt(categoryId))) {
-      // Financial & Trading Services
-      return {
-        border: 'border-l-4 border-yellow-500',
-        badge: 'bg-yellow-100 text-yellow-700',
-        text: 'text-yellow-700'
-      };
-    } else if ([16, 17, 18, 19].includes(parseInt(categoryId))) {
-      // Technical Specialists
-      return {
-        border: 'border-l-4 border-blue-500',
-        badge: 'bg-blue-100 text-blue-700',
-        text: 'text-blue-700'
-      };
-    } else if ([20, 21, 22].includes(parseInt(categoryId))) {
-      // Legal & Regulatory
-      return {
-        border: 'border-l-4 border-red-500',
-        badge: 'bg-red-100 text-red-700',
-        text: 'text-red-700'
-      };
-    } else if ([23, 24, 25, 26, 27].includes(parseInt(categoryId))) {
-      // Regional & Standards
-      return {
-        border: 'border-l-4 border-purple-500',
-        badge: 'bg-purple-100 text-purple-700',
-        text: 'text-purple-700'
-      };
-    } else {
-      // Support Services
-      return {
-        border: 'border-l-4 border-gray-500',
-        badge: 'bg-gray-100 text-gray-700',
-        text: 'text-gray-700'
-      };
-    }
-  };
-  
   const handleSearch = (e) => {
     e.preventDefault();
   };
   
   const resetFilters = () => {
     setSearchTerm('');
-    if (selectedTab === 'products') {
-      setSelectedCategory('all');
-      setSelectedSubcategory('all');
-      setPriceRange({ min: '', max: '' });
-      setEmissionReductionMin('');
-      setSelectedImplementationTime('all');
-    } else {
-      setSelectedProviderCategories([]); // Reset to empty array for multiple selection
-    }
+    setSelectedCategory('all');
+    setSelectedSubcategory('all');
+    setSelectedServiceCategory('All Services');
+    setPriceRange({ min: '', max: '' });
+    setEmissionReductionMin('');
+    setSelectedImplementationTime('all');
   };
   
-  // Parse JSONB fields safely
-  const parseJsonField = (field, defaultValue = []) => {
-    if (!field) return defaultValue;
-    if (typeof field === 'string') {
+  // Parse service metadata
+  const parseServiceMetadata = (metadata) => {
+    if (!metadata) return {};
+    if (typeof metadata === 'string') {
       try {
-        return JSON.parse(field);
+        return JSON.parse(metadata);
       } catch (e) {
-        return defaultValue;
+        return {};
       }
     }
-    return field;
+    return metadata;
   };
+  
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
@@ -298,14 +205,15 @@ const MarketplacePage = () => {
         
         {currentUser && currentUser.role === 'solutionProvider' && (
           <Link 
-            to="/service-providers/new" 
+            to="/marketplace/add-solution" 
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
-            Become a Service Provider
+            Add Your Solution
           </Link>
         )}
       </div>
       
+      {/* Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
         <button 
           className={`py-2 px-4 font-medium transition-colors ${
@@ -319,13 +227,13 @@ const MarketplacePage = () => {
         </button>
         <button 
           className={`py-2 px-4 font-medium transition-colors ${
-            selectedTab === 'providers' 
+            selectedTab === 'services' 
               ? 'text-blue-600 border-b-2 border-blue-500' 
               : 'text-gray-500 hover:text-gray-700'
           }`}
-          onClick={() => setSelectedTab('providers')}
+          onClick={() => setSelectedTab('services')}
         >
-          Service Providers
+          Services
         </button>
       </div>
       
@@ -333,7 +241,7 @@ const MarketplacePage = () => {
         {/* Filters Sidebar */}
         <div className="w-full md:w-1/4">
           <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">Filter Solutions</h2>
+            <h2 className="text-xl font-semibold mb-4">Filter {selectedTab === 'products' ? 'Products' : 'Services'}</h2>
             
             <form onSubmit={handleSearch} className="mb-6">
               <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2">
@@ -344,7 +252,7 @@ const MarketplacePage = () => {
                   type="text"
                   id="search"
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
-                  placeholder="Search solutions..."
+                  placeholder={`Search ${selectedTab}...`}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -361,6 +269,7 @@ const MarketplacePage = () => {
             
             {selectedTab === 'products' ? (
               <>
+                {/* Product Filters */}
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Categories
@@ -400,27 +309,6 @@ const MarketplacePage = () => {
                   </div>
                 </div>
                 
-                {/* Subcategory Filter */}
-                {subcategories.length > 0 && (
-                  <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Subcategories
-                    </label>
-                    <select
-                      value={selectedSubcategory}
-                      onChange={(e) => setSelectedSubcategory(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="all">All Subcategories</option>
-                      {subcategories.map(subcat => (
-                        <option key={subcat.id} value={subcat.id}>
-                          {subcat.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                
                 {/* Price Range Filter */}
                 <div className="mb-6">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -459,75 +347,34 @@ const MarketplacePage = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-                
-                {/* Implementation Time Filter */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Implementation Time
-                  </label>
-                  <select
-                    value={selectedImplementationTime}
-                    onChange={(e) => setSelectedImplementationTime(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="all">Any timeframe</option>
-                    <option value="immediate">Immediate</option>
-                    <option value="short">1-2 months</option>
-                    <option value="medium">3-6 months</option>
-                    <option value="long">1+ years</option>
-                  </select>
-                </div>
               </>
             ) : (
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Service Categories (Select multiple)
-                </label>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedProviderCategories([])}
-                      className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                      Clear all
-                    </button>
-                    {selectedProviderCategories.length > 0 && (
-                      <span className="text-sm text-gray-500">
-                        ({selectedProviderCategories.length} selected)
-                      </span>
-                    )}
+              <>
+                {/* Service Filters */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Service Category
+                  </label>
+                  <div className="space-y-2">
+                    {serviceCategories.map(category => (
+                      <div key={category} className="flex items-center">
+                        <input
+                          type="radio"
+                          id={`service-${category}`}
+                          name="serviceCategory"
+                          value={category}
+                          checked={selectedServiceCategory === category}
+                          onChange={() => setSelectedServiceCategory(category)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                        />
+                        <label htmlFor={`service-${category}`} className="ml-2 text-sm text-gray-700">
+                          {category}
+                        </label>
+                      </div>
+                    ))}
                   </div>
-                  
-                  {providerCategories.map(category => (
-                    <div key={category.id} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id={`pcat-${category.id}`}
-                        value={category.id}
-                        checked={selectedProviderCategories.includes(category.id.toString())}
-                        onChange={(e) => {
-                          const categoryId = category.id.toString();
-                          if (e.target.checked) {
-                            setSelectedProviderCategories([...selectedProviderCategories, categoryId]);
-                          } else {
-                            setSelectedProviderCategories(selectedProviderCategories.filter(id => id !== categoryId));
-                          }
-                        }}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor={`pcat-${category.id}`} className="ml-2 text-sm text-gray-700 flex-1 cursor-pointer">
-                        <span className="font-medium">{category.category_name}</span>
-                        {category.parent_category_name && (
-                          <span className="text-xs text-gray-500 block">
-                            {category.parent_category_name}
-                          </span>
-                        )}
-                      </label>
-                    </div>
-                  ))}
                 </div>
-              </div>
+              </>
             )}
             
             <button
@@ -550,175 +397,105 @@ const MarketplacePage = () => {
               <p className="font-semibold">Error</p>
               <p>{error}</p>
               <button 
-                onClick={selectedTab === 'products' ? loadProducts : loadServiceProviders} 
+                onClick={loadProducts} 
                 className="mt-2 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
               >
                 Try Again
               </button>
             </div>
-          ) : selectedTab === 'products' ? (
-            products.length === 0 ? (
-              <div className="bg-white rounded-lg shadow-md p-8 text-center">
-                <p className="text-gray-600 text-lg">No products found</p>
-                <p className="text-gray-500 mt-2">Try adjusting your filters or search terms</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {products.map((product) => (
-                  <Link 
-                    to={`/marketplace/solution/${product.id}`} 
-                    key={product.id}
-                    className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300"
-                  >
-                    <div className="relative h-48 overflow-hidden">
-                      <img 
-                        src={getImageUrl(product.image_url)} 
-                        alt={product.name}
-                        className="w-full h-full object-cover"
-                        onError={handleImageError}
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
-                    </div>
-                    
-                    <div className="p-5">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-semibold bg-green-100 text-green-700 px-3 py-1 rounded-full">
-                          {product.category || 'Product'}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {product.company_name || 'Unknown Vendor'}
-                        </span>
-                      </div>
-                      
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2 line-clamp-1">
-                        {product.name}
-                      </h3>
-                      
-                      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                        {product.description || 'No description available.'}
-                      </p>
-                      
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center text-green-600">
-                          <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M5 12l5 5L20 7" />
-                          </svg>
-                          <span className="font-semibold text-sm">
-                            {product.emissions_reduction_factor ? 
-                              `${Math.round(product.emissions_reduction_factor * 100)}% reduction` : 
-                              'Reduction varies'}
-                          </span>
-                        </div>
-                        
-                        {product.implementation_time && (
-                          <div className="text-xs text-gray-500 flex items-center">
-                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                            </svg>
-                            {product.implementation_time}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )
+          ) : products.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-md p-8 text-center">
+              <p className="text-gray-600 text-lg">No {selectedTab} found</p>
+              <p className="text-gray-500 mt-2">Try adjusting your filters or search terms</p>
+            </div>
           ) : (
-            // Service Providers view
-            providers.length === 0 ? (
-              <div className="bg-white rounded-lg shadow-md p-8 text-center">
-                <p className="text-gray-600 text-lg">No service providers found</p>
-                <p className="text-gray-500 mt-2">Try adjusting your filters or search terms</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {providers.map((provider) => {
-                  const style = getProviderCategoryStyle(provider.provider_type);
-                  const specializations = parseJsonField(provider.specializations, []);
-                  const certifications = parseJsonField(provider.certifications, []);
-                  const regions = parseJsonField(provider.regions_served, []);
-                  
-                  return (
-                    <Link 
-                      to={`/service-providers/${provider.id}`} 
-                      key={provider.id}
-                      className={`bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 ${style.border}`}
-                    >
-                      <div className="relative h-48 overflow-hidden bg-gray-100">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {products.map((item) => {
+                const isService = item.entry_type === 'service';
+                const serviceMetadata = isService ? parseServiceMetadata(item.service_metadata) : {};
+                
+                return (
+                  <div key={item.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300">
+                    <Link to={`/marketplace/solution/${item.id}`}>
+                      <div className="relative h-48 overflow-hidden">
                         <img 
-                          src={getImageUrl(provider.image_url)} 
-                          alt={provider.company_name}
+                          src={getImageUrl(item.image_url)} 
+                          alt={item.name}
                           className="w-full h-full object-cover"
                           onError={handleImageError}
                         />
-                      </div>
-                      
-                      <div className="p-5">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className={`text-xs font-semibold px-3 py-1 rounded-full ${style.badge}`}>
-                            {provider.primary_provider_category_name || 'Service Provider'}
-                          </span>
-                          {provider.team_size && (
-                            <span className="text-xs text-gray-500">
-                              {provider.team_size}
-                            </span>
-                          )}
-                        </div>
-                        
-                        <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                          {provider.company_name}
-                        </h3>
-                        
-                        <p className="text-gray-600 text-sm mb-3 line-clamp-2">
-                          {provider.description || 'No description available.'}
-                        </p>
-                        
-                        {specializations.length > 0 && (
-                          <div className="mb-2">
-                            <div className="flex flex-wrap gap-1">
-                              {specializations.slice(0, 3).map((spec, index) => (
-                                <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                                  {spec}
-                                </span>
-                              ))}
-                              {specializations.length > 3 && (
-                                <span className="text-xs text-gray-500">
-                                  +{specializations.length - 3} more
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {provider.years_experience && (
-                          <div className="flex items-center text-sm text-gray-700">
-                            <svg className="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            {provider.years_experience} years experience
-                          </div>
-                        )}
-                        
-                        {provider.pricing_model && (
-                          <div className="flex items-center mt-1 text-sm text-gray-700">
-                            <svg className="w-4 h-4 mr-1 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            {provider.pricing_model}
-                            {provider.hourly_rate_min && provider.hourly_rate_max && (
-                              <span className="ml-1">
-                                ${provider.hourly_rate_min}-${provider.hourly_rate_max}/hr
-                              </span>
-                            )}
-                          </div>
-                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
                       </div>
                     </Link>
-                  );
-                })}
-              </div>
-            )
+                    
+                    <div className="p-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                          isService ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                        }`}>
+                          {isService ? (item.subcategory || 'Service') : (item.category || 'Product')}
+                        </span>
+                        <Link 
+                          to={`/profile/${item.user_id}`} 
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          {item.company_name || 'Unknown Vendor'}
+                        </Link>
+                      </div>
+                      
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2 line-clamp-1">
+                        <Link to={`/marketplace/solution/${item.id}`} className="hover:text-green-600">
+                          {item.name}
+                        </Link>
+                      </h3>
+                      
+                      <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                        {item.description || 'No description available.'}
+                      </p>
+                      
+                      <div className="flex items-center justify-between">
+                        {isService ? (
+                          <>
+                            {serviceMetadata.years_experience && (
+                              <div className="text-sm text-gray-600">
+                                <span className="font-medium">{serviceMetadata.years_experience}</span> years exp.
+                              </div>
+                            )}
+                            {serviceMetadata.availability && (
+                              <div className="text-xs text-gray-500">
+                                {serviceMetadata.availability.replace('_', ' ')}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center text-green-600">
+                              <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M5 12l5 5L20 7" />
+                              </svg>
+                              <span className="font-semibold text-sm">
+                                {item.emissions_reduction_factor ? 
+                                  `${Math.round(item.emissions_reduction_factor * 100)}% reduction` : 
+                                  'Reduction varies'}
+                              </span>
+                            </div>
+                            
+                            {item.implementation_time && (
+                              <div className="text-xs text-gray-500 flex items-center">
+                                <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                </svg>
+                                {item.implementation_time}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

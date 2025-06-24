@@ -17,7 +17,6 @@ import AboutPage from './AboutPage';
 import ProjectsManagePage from './ProjectsManagePage';
 import MarketplacePage from './MarketplacePage';
 import AddSolutionForm from './AddSolutionForm';
-import ServiceProviderForm from './components/ServiceProviderForm';
 import CombinedConverterPage from './CombinedConverterPage';
 import CarbonProjectPage from './CarbonProjectPage';
 import CarbonFootprintPage from './CarbonFootprintPage';
@@ -26,16 +25,13 @@ import ProfileEditPage from './ProfileEdit';
 import Dashboard from './Dashboard';
 import ProductDetailPage from './components/ProductDetailPage';
 import ProductEditPage from './components/marketplace/ProductEditPage';
-import ReportsList from './ReportsList'; // Add this import
+import ReportsList from './ReportsList';
 
 // Import project-related components
 import ProjectsListingPage from './ProjectsListingPage';
 import ProjectDetailPage from './ProjectDetailPage';
 import ProjectListingForm from './ProjectListingForm';
 import ProjectEditPage from './ProjectEditPage';
-
-// Import service provider components
-import ServiceProviderProfile from './ServiceProviderProfile';
 
 // Placeholder for missing pages that can be implemented later
 const NotFoundPage = () => <div className="container mx-auto px-4 py-8"><h1>Page Not Found</h1></div>;
@@ -109,36 +105,6 @@ const App = () => {
                 element={
                   <ProtectedRoute>
                     <AddSolutionForm />
-                  </ProtectedRoute>
-                }
-              />
-              
-              {/* Service Provider Routes */}
-              <Route 
-                path="/service-provider/register" 
-                element={
-                  <ProtectedRoute>
-                    <ServiceProviderForm />
-                  </ProtectedRoute>
-                }
-              />
-              <Route 
-                path="/service-providers/new" 
-                element={
-                  <ProtectedRoute>
-                    <ServiceProviderForm />
-                  </ProtectedRoute>
-                }
-              />
-              <Route 
-                path="/service-providers/:id" 
-                element={<ServiceProviderProfile />}
-              />
-              <Route 
-                path="/service-providers/:id/edit" 
-                element={
-                  <ProtectedRoute>
-                    <ServiceProviderForm />
                   </ProtectedRoute>
                 }
               />

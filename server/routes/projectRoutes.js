@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
         LEFT JOIN documents d ON p.id = d.project_id
       `;
       
-      // Check for article6 filter
+      // Check for filters
       const whereConditions = [];
       const queryParams = [];
       
@@ -51,6 +51,12 @@ router.get('/', async (req, res) => {
         whereConditions.push(`p.buying_party ILIKE $${queryParams.length}`);
       }
       
+      // Add user_id filter if provided - THIS IS THE FIX
+      if (req.query.user_id) {
+        queryParams.push(req.query.user_id);
+        whereConditions.push(`p.user_id = $${queryParams.length}`);
+      }
+      
       // Add WHERE clause if we have conditions
       if (whereConditions.length > 0) {
         query += ' WHERE ' + whereConditions.join(' AND ');
@@ -64,7 +70,7 @@ router.get('/', async (req, res) => {
       
       const result = await client.query(query, queryParams);
       
-      console.log(`Retrieved ${result.rows.length} projects`);
+      console.log(`Retrieved ${result.rows.length} projects${req.query.user_id ? ` for user ${req.query.user_id}` : ''}`);
       res.json(result.rows);
     } finally {
       client.release();

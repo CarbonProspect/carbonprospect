@@ -1,13 +1,53 @@
 // src/ProfilePage.js
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useAuth, getValidToken } from './AuthSystem';
-import { apiCall } from './api-config';
+import { useAuth } from './AuthSystem';
+
+// Use the same API base as ProfileEdit.js
+const API_BASE = process.env.NODE_ENV === 'production' 
+  ? '/api'  // In production, use relative path (same domain)
+  : 'http://localhost:3001/api';  // In development, use localhost:3001 (not 3002!)
+
+// Replace apiCall with direct fetch
+const fetchWithAuth = async (method, endpoint, data = null) => {
+  const token = localStorage.getItem('token');
+  const config = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  };
+  
+  if (data && method !== 'GET') {
+    config.body = JSON.stringify(data);
+  }
+  
+  const response = await fetch(`${API_BASE}${endpoint}`, config);
+  
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw errorData;
+  }
+  
+  return response.json();
+};
 
 // Helper function for formatting numbers
 function formatNumber(num) {
   if (!num && num !== 0) return 'Not specified';
   return Number(num).toLocaleString();
+}
+
+// Helper function for formatting currency
+function formatCurrency(amount) {
+  if (!amount && amount !== 0) return null;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount);
 }
 
 // Component to display provider types
@@ -271,8 +311,8 @@ const ProfilePage = () => {
         }
         
         try {
-          // Use apiCall from api-config.js
-          const profileData = await apiCall('GET', `/profiles/unified/${id}`);
+          // Use direct fetch instead of apiCall
+          const profileData = await fetchWithAuth('GET', `/profiles/unified/${id}`);
           
           if (profileData.profile_type === 'none') {
             // User exists but has no profile
@@ -315,6 +355,11 @@ const ProfilePage = () => {
           profileData.contact_info = parseJsonField(profileData.contact_info, {});
           profileData.social_profiles = parseJsonField(profileData.social_profiles, {});
           profileData.provider_types_detail = parseJsonField(profileData.provider_types_detail, []);
+          profileData.specializations = parseJsonField(profileData.specializations, []);
+          profileData.services = parseJsonField(profileData.services, []);
+          profileData.languages = parseJsonField(profileData.languages, []);
+          profileData.regions_served = parseJsonField(profileData.regions_served, []);
+          profileData.industries_served = parseJsonField(profileData.industries_served, []);
           
           setDeveloper({
             ...profileData,
@@ -330,7 +375,7 @@ const ProfilePage = () => {
         
         // Fetch projects by this user
         try {
-          const projectsData = await apiCall('GET', `/projects?user_id=${id}`);
+          const projectsData = await fetchWithAuth('GET', `/projects?user_id=${id}`);
           setProjects(Array.isArray(projectsData) ? projectsData : []);
         } catch (err) {
           console.log('Error fetching projects:', err);
@@ -338,7 +383,7 @@ const ProfilePage = () => {
         
         // Fetch solutions if provider
         try {
-          const solutionsData = await apiCall('GET', `/marketplace/products?user_id=${id}`);
+          const solutionsData = await fetchWithAuth('GET', `/marketplace/products?user_id=${id}`);
           setSolutions(Array.isArray(solutionsData) ? solutionsData : []);
         } catch (err) {
           console.log('Error fetching solutions:', err);
@@ -379,7 +424,6 @@ const ProfilePage = () => {
     
     return profileIdMatch || userIdMatch;
   }, [currentUser, id, developer]);
-  
   // Loading state
   if (loading) {
     return (
@@ -470,257 +514,427 @@ const ProfilePage = () => {
       </div>
     );
   }
-  
-  // Debug logging to see what data we actually have
-  console.log('Developer data:', developer);
-  console.log('Website:', developer.website);
-  console.log('Social profiles:', developer.social_profiles);
-  console.log('Contact info:', developer.contact_info);
-  console.log('Visibility settings:', developer.visibility_settings);
-  
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-5xl mx-auto">
-        {/* Breadcrumbs */}
-        <div className="flex items-center text-sm text-gray-500 mb-4">
-          <Link to="/projects" className="hover:text-green-600">Projects</Link>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mx-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          <span className="text-gray-700">{developer.organization_name || developer.company_name || 'Profile'}</span>
-        </div>
-        
-        {/* DEBUG SECTION - Remove this after debugging */}
-        {isProfileOwner && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <h3 className="font-bold text-yellow-800 mb-2">Debug Info (Only visible to profile owner)</h3>
-            <div className="text-xs font-mono">
-              <p><strong>Website:</strong> {developer.website || 'Not set'}</p>
-              <p><strong>Social Profiles:</strong></p>
-              <pre>{JSON.stringify(developer.social_profiles, null, 2)}</pre>
-              <p><strong>Contact Info:</strong></p>
-              <pre>{JSON.stringify(developer.contact_info, null, 2)}</pre>
-              <p><strong>Visibility Settings:</strong></p>
-              <pre>{JSON.stringify(developer.visibility_settings, null, 2)}</pre>
-              <p><strong>All Data:</strong></p>
-              <details>
-                <summary>Click to expand</summary>
-                <pre className="overflow-x-auto">{JSON.stringify(developer, null, 2)}</pre>
-              </details>
-            </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Hero Section with Gradient Background */}
+      <div className="relative bg-gradient-to-r from-green-600 to-blue-600 pb-32">
+        <div className="absolute inset-0 bg-black opacity-10"></div>
+        <div className="relative container mx-auto px-4 py-8">
+          {/* Breadcrumbs */}
+          <div className="flex items-center text-sm text-white/80 mb-6">
+            <Link to="/projects" className="hover:text-white">Projects</Link>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mx-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="text-white">{developer.organization_name || developer.company_name || 'Profile'}</span>
           </div>
-        )}
-        
-        {/* Profile Header */}
-        <div className="bg-white shadow-lg rounded-lg overflow-hidden mb-8 relative">
-          {/* Edit Button - Only shown to profile owner */}
-          {isProfileOwner && (
-            <Link 
-              to={`/profile/edit/${developer.id || id}`}
-              className="absolute top-4 right-4 inline-flex items-center px-3 py-1 border border-green-500 rounded-md shadow-sm text-sm font-medium text-green-600 bg-white hover:bg-green-50"
-            >
-              <svg className="h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              Edit Profile
-            </Link>
-          )}
           
-          <div className="px-6 py-5">
-            <div className="flex items-start">
-              {/* Profile avatar/logo */}
-              <div className="flex-shrink-0 mr-6">
-                <div className="h-20 w-20 rounded-full bg-green-600 flex items-center justify-center text-white text-2xl overflow-hidden">
-                  {developer.logo ? (
-                    <img 
-                      src={developer.logo} 
-                      alt={developer.organization_name || developer.company_name} 
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <span>
-                      {(developer.organization_name || developer.company_name || 'P').substring(0, 2).toUpperCase()}
-                    </span>
-                  )}
-                </div>
+          {/* Profile Header */}
+          <div className="flex items-start justify-between">
+            <div className="flex items-start space-x-6">
+              {/* Profile Avatar */}
+              <div className="h-32 w-32 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-white text-4xl font-bold shadow-xl overflow-hidden">
+                {developer.logo ? (
+                  <img 
+                    src={developer.logo} 
+                    alt={developer.organization_name} 
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span>
+                    {(developer.organization_name || developer.company_name || 'P').substring(0, 2).toUpperCase()}
+                  </span>
+                )}
               </div>
               
-              {/* Profile details */}
-              <div className="flex-1">
-                <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                  {developer.organization_name || developer.company_name || 'Profile'}
+              {/* Basic Info */}
+              <div className="text-white">
+                <h1 className="text-4xl font-bold mb-2">
+                  {developer.organization_name || developer.company_name}
                 </h1>
                 
-                <div className="flex items-center mb-4">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mr-2">
-                    {developer.organization_type || developer.provider_type || 'Organization'}
+                <div className="flex items-center space-x-3 mb-4">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-white/20 backdrop-blur-sm">
+                    {developer.organization_type || developer.provider_type}
                   </span>
-                  
                   {developer.industry && (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-white/20 backdrop-blur-sm">
                       {developer.industry}
                     </span>
                   )}
+                  {developer.company_size && (
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-white/20 backdrop-blur-sm">
+                      {developer.company_size}
+                    </span>
+                  )}
                 </div>
                 
-                {/* Website - Always show if it exists and is not empty */}
-                {developer.website && developer.website.trim() !== '' && (
-                  <a 
-                    href={developer.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 hover:underline flex items-center text-sm"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                    {developer.website}
-                  </a>
+                {/* Location and Website */}
+                <div className="flex items-center space-x-4 text-white/90">
+                  {developer.headquarters_city && developer.headquarters_country && (
+                    <span className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      {developer.headquarters_city}, {developer.headquarters_country}
+                    </span>
+                  )}
+                  
+                  {developer.website && (
+                    <a 
+                      href={developer.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center hover:text-white"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                      Visit Website
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Edit Button */}
+            {isProfileOwner && (
+              <Link 
+                to={`/profile/edit/${developer.id || id}`}
+                className="inline-flex items-center px-4 py-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-lg text-white hover:bg-white/30 transition-colors"
+              >
+                <svg className="h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Edit Profile
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+      
+      {/* Main Content Area */}
+      <div className="container mx-auto px-4 -mt-20 relative z-10">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-sm">Founded</p>
+                <p className="text-2xl font-bold text-gray-900">{developer.founded_year || 'N/A'}</p>
+              </div>
+              <div className="bg-blue-100 rounded-full p-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-sm">Team Size</p>
+                <p className="text-2xl font-bold text-gray-900">{developer.team_size || 'N/A'}</p>
+              </div>
+              <div className="bg-green-100 rounded-full p-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-sm">Experience</p>
+                <p className="text-2xl font-bold text-gray-900">{developer.years_experience || 0}+ years</p>
+              </div>
+              <div className="bg-purple-100 rounded-full p-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-500 text-sm">Availability</p>
+                <p className="text-2xl font-bold text-gray-900">{developer.availability || 'N/A'}</p>
+              </div>
+              <div className="bg-orange-100 rounded-full p-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column - Main Info */}
+          <div className="lg:col-span-2 space-y-8">
+            {/* About Section */}
+            {developer.company_description && (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  About
+                </h2>
+                <p className="text-gray-600 whitespace-pre-line">{developer.company_description}</p>
+              </div>
+            )}
+            
+            {/* Services & Expertise */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Services & Expertise
+              </h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {developer.services && developer.services.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-3">Services Offered</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {developer.services.map((service, index) => (
+                        <span key={index} className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                          {service}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {developer.specializations && developer.specializations.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-3">Specializations</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {developer.specializations.map((spec, index) => (
+                        <span key={index} className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                          {spec}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {developer.certifications && developer.certifications.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-3">Certifications</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {developer.certifications.map((cert, index) => (
+                        <span key={index} className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {cert}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {developer.languages && developer.languages.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-3">Languages</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {developer.languages.map((lang, index) => (
+                        <span key={index} className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+                          {lang}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
             
-            {/* Profile details grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 pt-6 border-t border-gray-200">
-              {developer.headquarters_city && developer.headquarters_country && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Headquarters</h3>
-                  <p className="text-gray-900">{developer.headquarters_city}, {developer.headquarters_country}</p>
-                </div>
-              )}
-              
-              {developer.regions && developer.regions.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Regions of Operation</h3>
-                  <p className="text-gray-900">
-                    {Array.isArray(developer.regions) 
-                      ? developer.regions.join(', ') 
-                      : typeof developer.regions === 'string' 
-                        ? developer.regions
-                        : 'Global'}
-                  </p>
-                </div>
-              )}
-              
-              {developer.founded_year && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Founded</h3>
-                  <p className="text-gray-900">{developer.founded_year}</p>
-                </div>
-              )}
-              
-              {developer.created_at && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Member Since</h3>
-                  <p className="text-gray-900">{formatDate(developer.created_at)}</p>
-                </div>
-              )}
-              
-              {/* Project Types Section */}
-              {developer.project_types && Array.isArray(developer.project_types) && developer.project_types.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Project Types</h3>
-                  <p className="text-gray-900">
-                    {developer.project_types.join(', ')}
-                  </p>
-                </div>
-              )}
-              
-              {/* Certifications Section */}
-              {developer.certifications && Array.isArray(developer.certifications) && developer.certifications.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Certifications</h3>
-                  <p className="text-gray-900">
-                    {developer.certifications.join(', ')}
-                  </p>
-                </div>
-              )}
-              
-              {developer.company_size && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500 mb-1">Company Size</h3>
-                  <p className="text-gray-900">{developer.company_size}</p>
-                </div>
-              )}
-              
-              {/* Provider Types Section - For Service Providers */}
-              {developer.provider_types_detail && (
-                <div className="md:col-span-2">
-                  <ProviderTypesDisplay providerTypes={developer.provider_types_detail} />
-                </div>
-              )}
-            </div>
-            
-            {/* Contact Information - only shown if visibility allows */}
-            {developer.contact_info && 
-              (checkVisibility('contactInfo') || isProfileOwner) && 
-              (
-                (developer.contact_info.contact_name && developer.contact_info.contact_name.trim() !== '') ||
-                (developer.contact_info.contact_email && developer.contact_info.contact_email.trim() !== '') ||
-                (developer.contact_info.contact_phone && developer.contact_info.contact_phone.trim() !== '')
-              ) && (
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900 mb-3">
-                  Contact Information
-                  {!checkVisibility('contactInfo') && isProfileOwner && (
+            {/* Pricing Information */}
+            {(checkVisibility('financialInfo') || isProfileOwner) && developer.pricing_model && (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Pricing & Terms
+                  {!checkVisibility('financialInfo') && isProfileOwner && (
                     <span className="text-xs font-normal ml-2 text-gray-500">(Only visible to you)</span>
                   )}
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {developer.contact_info.contact_name && developer.contact_info.contact_name.trim() !== '' && (
+                </h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="text-sm font-medium text-gray-500 mb-1">Pricing Model</h3>
+                    <p className="text-lg font-semibold text-gray-900">{developer.pricing_model}</p>
+                  </div>
+                  
+                  {developer.hourly_rate_min && developer.hourly_rate_max && (
+                    <div className="bg-green-50 p-4 rounded-lg">
+                      <h3 className="text-sm font-medium text-gray-500 mb-1">Hourly Rate</h3>
+                      <p className="text-lg font-semibold text-green-600">
+                        {formatCurrency(developer.hourly_rate_min)} - {formatCurrency(developer.hourly_rate_max)}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {developer.project_minimum && (
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h3 className="text-sm font-medium text-gray-500 mb-1">Minimum Project Size</h3>
+                      <p className="text-lg font-semibold text-blue-600">{formatCurrency(developer.project_minimum)}</p>
+                    </div>
+                  )}
+                  
+                  {developer.response_time && (
+                    <div className="bg-purple-50 p-4 rounded-lg">
+                      <h3 className="text-sm font-medium text-gray-500 mb-1">Response Time</h3>
+                      <p className="text-lg font-semibold text-purple-600">{developer.response_time}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Service Coverage */}
+            {(developer.regions_served || developer.industries_served) && (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Service Coverage
+                </h2>
+                
+                {developer.regions_served && developer.regions_served.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-medium text-gray-500 mb-3">Regions Served</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {developer.regions_served.map((region, index) => (
+                        <span key={index} className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          {region}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {developer.industries_served && developer.industries_served.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 mb-3">Industries Served</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {developer.industries_served.map((industry, index) => (
+                        <span key={index} className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-green-50 text-green-700 border border-green-200">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                          {industry}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {/* Right Column - Contact & Additional Info */}
+          <div className="space-y-8">
+            {/* Contact Information */}
+            {developer.contact_info && (checkVisibility('contactInfo') || isProfileOwner) && (
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  Contact Information
+                  {!checkVisibility('contactInfo') && isProfileOwner && (
+                    <span className="text-xs font-normal ml-2 text-gray-500">(Private)</span>
+                  )}
+                </h2>
+                
+                <div className="space-y-4">
+                  {developer.contact_info.contact_name && (
                     <div>
-                      <h4 className="text-sm font-medium text-gray-500 mb-1">Contact Person</h4>
-                      <p className="text-gray-900">{developer.contact_info.contact_name}</p>
-                      {developer.contact_info.contact_position && developer.contact_info.contact_position.trim() !== '' && (
-                        <p className="text-sm text-gray-500">{developer.contact_info.contact_position}</p>
+                      <p className="text-sm text-gray-500">Contact Person</p>
+                      <p className="font-medium text-gray-900">{developer.contact_info.contact_name}</p>
+                      {developer.contact_info.contact_position && (
+                        <p className="text-sm text-gray-600">{developer.contact_info.contact_position}</p>
                       )}
                     </div>
                   )}
                   
-                  {developer.contact_info.contact_email && developer.contact_info.contact_email.trim() !== '' && (
+                  {developer.contact_info.contact_email && (
                     <div>
-                      <h4 className="text-sm font-medium text-gray-500 mb-1">Email</h4>
+                      <p className="text-sm text-gray-500">Email</p>
                       <a 
                         href={`mailto:${developer.contact_info.contact_email}`}
-                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                        className="font-medium text-blue-600 hover:text-blue-800 flex items-center"
                       >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
                         {developer.contact_info.contact_email}
                       </a>
                     </div>
                   )}
                   
-                  {developer.contact_info.contact_phone && developer.contact_info.contact_phone.trim() !== '' && (
+                  {developer.contact_info.contact_phone && (
                     <div>
-                      <h4 className="text-sm font-medium text-gray-500 mb-1">Phone</h4>
-                      <p className="text-gray-900">{developer.contact_info.contact_phone}</p>
+                      <p className="text-sm text-gray-500">Phone</p>
+                      <p className="font-medium text-gray-900 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                        {developer.contact_info.contact_phone}
+                      </p>
                     </div>
                   )}
                 </div>
+                
+                {/* Contact Button */}
+                {!isProfileOwner && developer.contact_info.contact_email && (
+                  <div className="mt-6">
+                    <a
+                      href={`mailto:${developer.contact_info.contact_email}`}
+                      className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Send Message
+                    </a>
+                  </div>
+                )}
               </div>
             )}
             
-            {/* About section */}
-            {developer.company_description && developer.company_description.trim() !== '' && (
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">About</h3>
-                <p className="text-gray-600 whitespace-pre-line">{developer.company_description}</p>
-              </div>
-            )}
-            
-            {/* Social Media Links - Show if any exist and are not empty */}
+            {/* Social Media */}
             {developer.social_profiles && Object.values(developer.social_profiles).some(url => url && url.trim() !== '') && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900 mb-3">Connect</h3>
-                <div className="flex space-x-4">
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <h2 className="text-lg font-bold text-gray-900 mb-4">Connect on Social Media</h2>
+                <div className="flex space-x-3">
                   {developer.social_profiles.linkedin && developer.social_profiles.linkedin.trim() !== '' && (
                     <a 
                       href={developer.social_profiles.linkedin}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800"
+                      className="bg-blue-100 p-3 rounded-lg hover:bg-blue-200 transition-colors group"
                       title="LinkedIn"
                     >
-                      <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                      <svg className="h-5 w-5 text-blue-600 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
                       </svg>
                     </a>
@@ -731,51 +945,64 @@ const ProfilePage = () => {
                       href={developer.social_profiles.twitter}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-600"
+                      className="bg-blue-50 p-3 rounded-lg hover:bg-blue-100 transition-colors group"
                       title="Twitter"
                     >
-                      <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+                      <svg className="h-5 w-5 text-blue-400 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z"/>
-                      </svg>
-                    </a>
-                  )}
-                  
-                  {developer.social_profiles.facebook && developer.social_profiles.facebook.trim() !== '' && (
-                    <a 
-                      href={developer.social_profiles.facebook}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800"
-                      title="Facebook"
-                    >
-                      <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                      </svg>
-                    </a>
-                  )}
-                  
-                  {developer.social_profiles.instagram && developer.social_profiles.instagram.trim() !== '' && (
-                    <a 
-                      href={developer.social_profiles.instagram}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-pink-600 hover:text-pink-800"
-                      title="Instagram"
-                    >
-                      <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zM5.838 12a6.162 6.162 0 1112.324 0 6.162 6.162 0 01-12.324 0zM12 16a4 4 0 110-8 4 4 0 010 8zm4.965-10.405a1.44 1.44 0 112.881.001 1.44 1.44 0 01-2.881-.001z"/>
                       </svg>
                     </a>
                   )}
                 </div>
               </div>
             )}
+            
+            {/* Quick Stats */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Quick Facts</h2>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Member Since</span>
+                  <span className="font-medium text-gray-900">{formatDate(developer.created_at)}</span>
+                </div>
+                {developer.project_count && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Total Projects</span>
+                    <span className="font-medium text-gray-900">{developer.project_count}</span>
+                  </div>
+                )}
+                {developer.total_reduction && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">CO₂ Reduced</span>
+                    <span className="font-medium text-green-600">{formatNumber(developer.total_reduction)} tCO₂e</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* CTA Card */}
+            {!isProfileOwner && (
+              <div className="bg-gradient-to-r from-green-500 to-blue-500 rounded-lg shadow-md p-6 text-white">
+                <h3 className="text-lg font-bold mb-2">Interested in working together?</h3>
+                <p className="text-sm mb-4 text-white/90">Get in touch to discuss your carbon reduction projects.</p>
+                <button className="w-full bg-white text-gray-900 font-medium py-2 px-4 rounded-lg hover:bg-gray-100 transition-colors">
+                  Contact Now
+                </button>
+              </div>
+            )}
           </div>
         </div>
         
+        {/* Provider Types Section - if they exist */}
+        {developer.provider_types_detail && (
+          <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+            <ProviderTypesDisplay providerTypes={developer.provider_types_detail} />
+          </div>
+        )}
+        
         {/* Solutions Section - For Providers */}
-        {developer.profileType === 'provider' && (
-          <div className="bg-white shadow-lg rounded-lg overflow-hidden mb-8">
+        {developer.profileType === 'service_provider' && (
+          <div className="mt-8 bg-white shadow-lg rounded-lg overflow-hidden">
             <div className="px-6 py-5">
               <SolutionsDisplay solutions={solutions} />
             </div>
@@ -784,117 +1011,122 @@ const ProfilePage = () => {
         
         {/* Projects Section */}
         {(checkVisibility('projectHistory') || isProfileOwner) && (
-          <div className="bg-white shadow-lg rounded-lg overflow-hidden mb-8">
-            <div className="px-6 py-5">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Projects by {developer.organization_name || developer.company_name || 'this User'}
-                  {!checkVisibility('projectHistory') && isProfileOwner && (
-                    <span className="text-xs font-normal ml-2 text-gray-500">(Only visible to you)</span>
-                  )}
-                </h2>
-                
-                {/* Add New Project button - only for profile owner */}
-                {isProfileOwner && (
-                  <Link
-                    to="/projects/new"
-                    className="inline-flex items-center px-3 py-1 border border-green-500 rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
-                  >
-                    <svg className="h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Add New Project
-                  </Link>
+          <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                Projects
+                {!checkVisibility('projectHistory') && isProfileOwner && (
+                  <span className="text-xs font-normal ml-2 text-gray-500">(Private)</span>
                 )}
-              </div>
+              </h2>
               
-              {projects && projects.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {projects.map(project => (
-                    <div key={project.id} className="border rounded-lg overflow-hidden shadow-sm">
-                      <div className="h-40 bg-green-100 relative">
-                        {project.image_url ? (
-                          <img 
-                            src={project.image_url} 
-                            alt={project.name} 
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex items-center justify-center h-full">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                        )}
-                        
-                        {/* Project badge */}
-                        <div className="absolute top-2 right-2">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-                            ${project.status === 'Active' ? 'bg-green-100 text-green-800' : 
-                              project.status === 'Draft' ? 'bg-gray-100 text-gray-800' : 
-                              project.status === 'Completed' ? 'bg-blue-100 text-blue-800' : 
-                              project.status === 'Seeking Partners' ? 'bg-purple-100 text-purple-800' : 
-                              'bg-yellow-100 text-yellow-800'}`}
-                          >
-                            {project.status || 'Draft'}
-                          </span>
+              {isProfileOwner && (
+                <Link
+                  to="/projects/new"
+                  className="inline-flex items-center px-3 py-1 border border-green-500 rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+                >
+                  <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Project
+                </Link>
+              )}
+            </div>
+            
+            {projects && projects.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {projects.map(project => (
+                  <div key={project.id} className="border rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
+                    <div className="h-48 bg-gradient-to-br from-green-400 to-blue-500 relative">
+                      {project.image_url ? (
+                        <img 
+                          src={project.image_url} 
+                          alt={project.name} 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
                         </div>
+                      )}
+                      
+                      <div className="absolute top-2 right-2">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                          ${project.status === 'Active' ? 'bg-green-100 text-green-800' : 
+                            project.status === 'Completed' ? 'bg-blue-100 text-blue-800' : 
+                            project.status === 'Seeking Partners' ? 'bg-purple-100 text-purple-800' : 
+                            'bg-gray-100 text-gray-800'}`}
+                        >
+                          {project.status || 'Draft'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="p-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-1">
+                        <Link to={`/projects/${project.id}`} className="hover:text-green-600">
+                          {project.name}
+                        </Link>
+                      </h3>
+                      
+                      <div className="flex items-center text-gray-500 text-sm mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        {project.location || 'Location not specified'}
                       </div>
                       
-                      <div className="p-4">
-                        <h3 className="text-lg font-medium text-gray-900 mb-1">
-                          <Link to={`/projects/${project.id}`} className="hover:text-green-600">
-                            {project.name}
-                          </Link>
-                        </h3>
-                        
-                        <div className="flex items-center text-gray-500 text-sm mb-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          {project.location || 'Location not specified'}
-                        </div>
-                        
-                        <p className="text-gray-600 text-sm line-clamp-3 mb-4">
-                          {project.description}
-                        </p>
-                        
-                        {project.reduction_target && (
+                      <p className="text-gray-600 text-sm line-clamp-2 mb-3">
+                        {project.description}
+                      </p>
+                      
+                      {project.reduction_target && (
+                        <div className="flex items-center justify-between">
                           <div className="flex items-center text-sm text-gray-700">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                             </svg>
-                            {formatNumber(project.reduction_target)} tCO2e
+                            {formatNumber(project.reduction_target)} tCO₂e
                           </div>
-                        )}
-                      </div>
+                          <Link
+                            to={`/projects/${project.id}`}
+                            className="text-sm text-green-600 hover:text-green-800 font-medium"
+                          >
+                            View →
+                          </Link>
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-500 italic mb-4">No projects found for this profile</p>
-                  
-                  {isProfileOwner && (
-                    <Link
-                      to="/projects/new"
-                      className="inline-flex items-center px-4 py-2 border border-green-500 rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
-                    >
-                      <svg className="h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      Create Your First Project
-                    </Link>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+                <p className="text-gray-500 mb-4">No projects yet</p>
+                {isProfileOwner && (
+                  <Link
+                    to="/projects/new"
+                    className="inline-flex items-center px-4 py-2 border border-green-500 rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+                  >
+                    Create Your First Project
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         )}
         
         {/* Action Buttons */}
-        <div className="flex justify-between">
+        <div className="flex justify-between mt-8 mb-8">
           <button
             onClick={() => navigate('/projects')}
             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
